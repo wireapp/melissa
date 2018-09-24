@@ -1,0 +1,8 @@
+[package]
+name = "treekem-rust"
+version = "0.1.0"
+authors = ["raphaelrobert <raphael@wire.com>"]
+
+[dependencies]
+sodiumoxide = "^0.1.0"
+libsodium-sys = "^0.1.0"
