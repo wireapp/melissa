@@ -1,17 +1,45 @@
+use codec::*;
 use sodiumoxide::crypto::scalarmult;
+use sodiumoxide::crypto::sign::ed25519;
 use sodiumoxide::randombytes;
 use sodiumoxide::utils;
+use std::hash::{Hash, Hasher};
 use tree::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Clone, Debug)]
 pub struct X25519PublicKey {
     group_element: scalarmult::curve25519::GroupElement,
 }
 
-#[derive(PartialEq, Clone)]
+impl Hash for X25519PublicKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.group_element.0.hash(state);
+    }
+}
+
+impl PartialEq for X25519PublicKey {
+    fn eq(&self, other: &X25519PublicKey) -> bool {
+        self.group_element.0 == other.group_element.0
+    }
+}
+
+impl Codec for X25519PublicKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.group_element.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Option<Self> {
+        let bytes = decode_vec_u8(cursor).unwrap();
+
+        Some(X25519PublicKey {
+            group_element: scalarmult::curve25519::GroupElement::from_slice(&bytes).unwrap(),
+        })
+    }
+}
+
+#[derive(PartialEq, Clone, Debug)]
 pub struct X25519PrivateKey {
     scalar: scalarmult::curve25519::Scalar,
 }
@@ -94,22 +122,55 @@ pub struct LeafKey {
     pub name: String,
 }
 
-#[derive(Clone)]
-pub struct SignaturePublicKey {}
+pub type SignaturePublicKey = ed25519::PublicKey;
+
+impl Codec for SignaturePublicKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Option<Self> {
+        let bytes = decode_vec_u8(cursor).unwrap();
+
+        Some(SignaturePublicKey::from_slice(&bytes).unwrap())
+    }
+}
+
+pub type SignaturePrivateKey = ed25519::SecretKey;
+
+pub type Signature = ed25519::Signature;
+
+impl Codec for Signature {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Option<Self> {
+        let bytes = decode_vec_u8(cursor).unwrap();
+
+        Some(Signature::from_slice(&bytes).unwrap())
+    }
+}
+
+pub type SignatureScheme = u16;
+
+pub const ED25519: SignatureScheme = 0;
+
+#[repr(u8)]
+pub enum CredentialType {
+    Basic = 0,
+    X509 = 1,
+    Default = 255,
+}
 
 #[derive(Clone)]
-pub struct SignaturePrivateKey {}
-
-#[derive(Clone)]
-pub struct SignatureScheme {}
-
-#[derive(Clone)]
-pub struct Signature {}
+pub struct BasicCredential {
+    pub identity: Vec<u8>, // <0..2^16-1>;
+    pub public_key: SignaturePublicKey,
+}
 
 pub type CipherSuite = u16;
 
-pub const AES126GCM_P256_SHA256: CipherSuite = 0;
-pub const AES126GCM_CURVE25519_SHA256: CipherSuite = 1;
+pub const AES128GCM_P256_SHA256: CipherSuite = 0;
+pub const AES128GCM_CURVE25519_SHA256: CipherSuite = 1;
 
 #[derive(Clone)]
 pub struct UserInitKey {
@@ -118,6 +179,54 @@ pub struct UserInitKey {
     pub identity_key: SignaturePublicKey,
     pub algorithm: SignatureScheme,
     pub signature: Signature,
+}
+
+impl UserInitKey {
+    pub fn new() -> Self {
+        // FIXME
+        UserInitKey {
+            cipher_suite: vec![0],
+            init_keys: vec![],
+            identity_key: SignaturePublicKey::from_slice(&[0u8; ed25519::PUBLICKEYBYTES]).unwrap(),
+            algorithm: ED25519,
+            signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
+        }
+    }
+    pub fn sign() {}
+    pub fn verify() -> bool {
+        true // FIXME
+    }
+    pub fn unsigned_payload(&self) -> Cursor {
+        let buffer = vec![];
+        let cursor: Cursor = Cursor::new(&buffer);
+
+        cursor
+    }
+}
+
+impl Codec for UserInitKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u16(buffer, &self.cipher_suite);
+        encode_vec_u16(buffer, &self.init_keys);
+        self.identity_key.encode(buffer);
+        self.algorithm.encode(buffer);
+        self.signature.encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Option<Self> {
+        let cipher_suite: Vec<CipherSuite> = decode_vec_u16(cursor).unwrap();
+        let init_keys: Vec<X25519PublicKey> = decode_vec_u16(cursor).unwrap();
+        let identity_key = SignaturePublicKey::decode(cursor).unwrap();
+        let algorithm = SignatureScheme::decode(cursor).unwrap();
+        let signature = Signature::decode(cursor).unwrap();
+        Some(UserInitKey {
+            cipher_suite,
+            init_keys,
+            identity_key,
+            algorithm,
+            signature,
+        })
+    }
 }
 
 // Legacy stuff

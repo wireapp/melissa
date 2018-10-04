@@ -1,12 +1,10 @@
-extern crate sodiumoxide;
-
 use aesgcm;
 use keys::*;
 use sodiumoxide::crypto::aead;
 use std::*;
 
 pub struct X25519AES {}
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub struct X25519AESCiphertext {
     public_key: X25519PublicKey,
     sealed_box: Vec<u8>,
