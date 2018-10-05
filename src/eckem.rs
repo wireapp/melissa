@@ -1,4 +1,5 @@
 use aesgcm;
+use codec::*;
 use keys::*;
 use sodiumoxide::crypto::aead;
 use std::*;
@@ -8,6 +9,21 @@ pub struct X25519AES {}
 pub struct X25519AESCiphertext {
     public_key: X25519PublicKey,
     sealed_box: Vec<u8>,
+}
+
+impl Codec for X25519AESCiphertext {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.public_key.encode(buffer);
+        encode_vec_u8(buffer, &self.sealed_box);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let public_key = X25519PublicKey::decode(cursor)?;
+        let sealed_box = decode_vec_u8(cursor)?;
+        Ok(X25519AESCiphertext {
+            public_key,
+            sealed_box,
+        })
+    }
 }
 
 impl X25519AES {

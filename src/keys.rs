@@ -30,10 +30,9 @@ impl Codec for X25519PublicKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
         encode_vec_u8(buffer, &self.group_element.0);
     }
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
-        let bytes = decode_vec_u8(cursor).unwrap();
-
-        Some(X25519PublicKey {
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(X25519PublicKey {
             group_element: scalarmult::curve25519::GroupElement::from_slice(&bytes).unwrap(),
         })
     }
@@ -128,10 +127,9 @@ impl Codec for SignaturePublicKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
         encode_vec_u8(buffer, &self.0);
     }
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
-        let bytes = decode_vec_u8(cursor).unwrap();
-
-        Some(SignaturePublicKey::from_slice(&bytes).unwrap())
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(SignaturePublicKey::from_slice(&bytes).unwrap())
     }
 }
 
@@ -143,10 +141,9 @@ impl Codec for Signature {
     fn encode(&self, buffer: &mut Vec<u8>) {
         encode_vec_u8(buffer, &self.0);
     }
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
-        let bytes = decode_vec_u8(cursor).unwrap();
-
-        Some(Signature::from_slice(&bytes).unwrap())
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(Signature::from_slice(&bytes).unwrap())
     }
 }
 
@@ -165,6 +162,21 @@ pub enum CredentialType {
 pub struct BasicCredential {
     pub identity: Vec<u8>, // <0..2^16-1>;
     pub public_key: SignaturePublicKey,
+}
+
+impl Codec for BasicCredential {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.identity);
+        self.public_key.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let identity = decode_vec_u8(cursor)?;
+        let public_key = SignaturePublicKey::decode(cursor)?;
+        Ok(BasicCredential {
+            identity,
+            public_key,
+        })
+    }
 }
 
 pub type CipherSuite = u16;
@@ -213,13 +225,13 @@ impl Codec for UserInitKey {
         self.signature.encode(buffer);
     }
 
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
-        let cipher_suite: Vec<CipherSuite> = decode_vec_u16(cursor).unwrap();
-        let init_keys: Vec<X25519PublicKey> = decode_vec_u16(cursor).unwrap();
-        let identity_key = SignaturePublicKey::decode(cursor).unwrap();
-        let algorithm = SignatureScheme::decode(cursor).unwrap();
-        let signature = Signature::decode(cursor).unwrap();
-        Some(UserInitKey {
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let cipher_suite: Vec<CipherSuite> = decode_vec_u16(cursor)?;
+        let init_keys: Vec<X25519PublicKey> = decode_vec_u16(cursor)?;
+        let identity_key = SignaturePublicKey::decode(cursor)?;
+        let algorithm = SignatureScheme::decode(cursor)?;
+        let signature = Signature::decode(cursor)?;
+        Ok(UserInitKey {
             cipher_suite,
             init_keys,
             identity_key,

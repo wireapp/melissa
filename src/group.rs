@@ -1,3 +1,4 @@
+use codec::*;
 use keys::*;
 use messages::*;
 use std::collections::hash_map::DefaultHasher;
@@ -19,6 +20,16 @@ impl GroupSecret {
         let mut group_secret = GroupSecret::default();
         group_secret.0.clone_from_slice(bytes);
         group_secret
+    }
+}
+
+impl Codec for GroupSecret {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(GroupSecret::from_bytes(&bytes))
     }
 }
 

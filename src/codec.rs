@@ -1,5 +1,11 @@
 use std::convert::*;
 
+#[derive(Debug)]
+pub enum CodecError {
+    EncodingError,
+    DecodingError,
+}
+
 pub struct Cursor {
     buffer: Vec<u8>,
     offset: usize,
@@ -13,19 +19,18 @@ impl<'a> Cursor {
         }
     }
 
-    pub fn take(&mut self, length: usize) -> Option<&[u8]> {
+    pub fn take(&mut self, length: usize) -> Result<&[u8], CodecError> {
         if self.unread_bytes() < length {
-            return None;
+            return Err(CodecError::DecodingError);
         }
 
         let current = self.offset;
         self.offset += length;
-        Some(&self.buffer[current..current + length])
+        Ok(&self.buffer[current..current + length])
     }
 
-    pub fn sub_cursor(&mut self, length: usize) -> Option<Cursor> {
-        self.take(length)
-            .and_then(|buffer| Some(Cursor::new(buffer)))
+    pub fn sub_cursor(&mut self, length: usize) -> Result<Cursor, CodecError> {
+        self.take(length).and_then(|buffer| Ok(Cursor::new(buffer)))
     }
 
     pub fn unread_bytes(&self) -> usize {
@@ -54,7 +59,7 @@ impl<'a> Cursor {
 pub trait Codec: Sized {
     fn encode(&self, buffer: &mut Vec<u8>);
 
-    fn decode(&mut Cursor) -> Option<Self>;
+    fn decode(&mut Cursor) -> Result<Self, CodecError>;
 
     fn encode_detached(&self) -> Vec<u8> {
         let mut buffer = vec![];
@@ -62,7 +67,7 @@ pub trait Codec: Sized {
         buffer
     }
 
-    fn decode_detached(buffer: &[u8]) -> Option<Self> {
+    fn decode_detached(buffer: &[u8]) -> Result<Self, CodecError> {
         let mut cursor = Cursor::new(buffer);
         Self::decode(&mut cursor)
     }
@@ -73,11 +78,11 @@ impl Codec for u8 {
         buffer.push(*self as u8);
     }
 
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let byte_option = cursor.take(1);
         match byte_option {
-            Some(bytes) => Some(u8::from(bytes[0])),
-            None => None,
+            Ok(bytes) => Ok(u8::from(bytes[0])),
+            Err(e) => Err(e),
         }
     }
 }
@@ -90,11 +95,33 @@ impl Codec for u16 {
         buffer.extend_from_slice(&bytes[..]);
     }
 
-    fn decode(cursor: &mut Cursor) -> Option<Self> {
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let bytes_option = cursor.take(2);
         match bytes_option {
-            Some(bytes) => Some((u16::from(bytes[0]) << 8) | u16::from(bytes[1])),
-            None => None,
+            Ok(bytes) => Ok((u16::from(bytes[0]) << 8) | u16::from(bytes[1])),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+impl Codec for u32 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        let mut bytes = [0u8; 4];
+        bytes[0] = (*self >> 24) as u8;
+        bytes[1] = (*self >> 16) as u8;
+        bytes[2] = (*self >> 8) as u8;
+        bytes[3] = *self as u8;
+        buffer.extend_from_slice(&bytes[..]);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes_option = cursor.take(2);
+        match bytes_option {
+            Ok(bytes) => Ok((u32::from(bytes[0]) << 24)
+                | (u32::from(bytes[1]) << 16)
+                | (u32::from(bytes[2]) << 8)
+                | u32::from(bytes[3])),
+            Err(e) => Err(e),
         }
     }
 }
@@ -117,7 +144,16 @@ pub fn encode_vec_u16<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
     bytes.append(&mut sub_cursor);
 }
 
-pub fn decode_vec_u8<T: Codec>(r: &mut Cursor) -> Option<Vec<T>> {
+pub fn encode_vec_u32<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
+    let mut sub_cursor: Vec<u8> = Vec::new();
+    slice.iter().for_each(|e| e.encode(&mut sub_cursor));
+
+    assert!(sub_cursor.len() <= u32::max_value() as usize);
+    (sub_cursor.len() as u32).encode(bytes);
+    bytes.append(&mut sub_cursor);
+}
+
+pub fn decode_vec_u8<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
     let mut ret: Vec<T> = Vec::new();
     let len = usize::from(u8::decode(r)?);
     let mut sub = r.sub_cursor(len)?;
@@ -126,10 +162,10 @@ pub fn decode_vec_u8<T: Codec>(r: &mut Cursor) -> Option<Vec<T>> {
         ret.push(T::decode(&mut sub)?);
     }
 
-    Some(ret)
+    Ok(ret)
 }
 
-pub fn decode_vec_u16<T: Codec>(r: &mut Cursor) -> Option<Vec<T>> {
+pub fn decode_vec_u16<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
     let mut ret: Vec<T> = Vec::new();
     let len = usize::from(u16::decode(r)?);
     let mut sub = r.sub_cursor(len)?;
@@ -138,5 +174,17 @@ pub fn decode_vec_u16<T: Codec>(r: &mut Cursor) -> Option<Vec<T>> {
         ret.push(T::decode(&mut sub)?);
     }
 
-    Some(ret)
+    Ok(ret)
+}
+
+pub fn decode_vec_u32<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
+    let mut ret: Vec<T> = Vec::new();
+    let len = u32::decode(r)? as usize;
+    let mut sub = r.sub_cursor(len)?;
+
+    while sub.has_more() {
+        ret.push(T::decode(&mut sub)?);
+    }
+
+    Ok(ret)
 }

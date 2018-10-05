@@ -1,3 +1,4 @@
+use codec::*;
 use eckem::*;
 use keys::*;
 use sodiumoxide::crypto::hash::sha256::*;
@@ -42,6 +43,16 @@ impl From<NodeSecret> for Digest {
         let mut bytes = [0u8; NODESECRETBYTES];
         bytes[..NODESECRETBYTES].clone_from_slice(&n.0[..NODESECRETBYTES]);
         Digest(bytes)
+    }
+}
+
+impl Codec for NodeSecret {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(NodeSecret::from_bytes(&bytes))
     }
 }
 
