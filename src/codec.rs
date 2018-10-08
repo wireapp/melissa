@@ -81,7 +81,7 @@ impl Codec for u8 {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let byte_option = cursor.take(1);
         match byte_option {
-            Ok(bytes) => Ok(u8::from(bytes[0])),
+            Ok(bytes) => Ok(bytes[0]),
             Err(e) => Err(e),
         }
     }

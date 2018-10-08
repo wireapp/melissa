@@ -36,7 +36,6 @@ impl Codec for HandshakeMessage {
                 HANDSHAKE_REMOVE.encode(buffer);
                 remove.encode(buffer);
             }
-            _ => {}
         }
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {

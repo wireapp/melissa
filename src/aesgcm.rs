@@ -8,6 +8,12 @@ use libsodium_sys::{
 use sodiumoxide::randombytes;
 use std::*;
 
+#[derive(Debug)]
+pub enum AesError {
+    EncryptionError,
+    DecryptionError,
+}
+
 pub const NONCEBYTES: usize = crypto_aead_aes256gcm_NPUBBYTES as usize;
 pub const KEYBYTES: usize = 32;
 pub const TAGBYTES: usize = crypto_aead_aes256gcm_ABYTES as usize;
@@ -43,7 +49,7 @@ impl From<Vec<u8>> for Key {
     }
 }
 
-pub fn seal(payload: &[u8], key: &Key) -> Vec<u8> {
+pub fn seal(payload: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
     let nonce = Nonce::new_random();
     let mut ciphertext: Vec<u8> = vec![0; payload.len()];
     let mut tag: Vec<u8> = vec![0; TAGBYTES];
@@ -63,18 +69,24 @@ pub fn seal(payload: &[u8], key: &Key) -> Vec<u8> {
             key.0.as_ptr(),
         );
     }
-    assert!(maclen > 0);
+    if maclen != TAGBYTES as u64 {
+        return Err(AesError::EncryptionError);
+    }
     sealed_box.extend_from_slice(&nonce.0);
     sealed_box.append(&mut ciphertext);
     sealed_box.append(&mut tag);
-    assert_eq!(sealed_box.len(), (NONCEBYTES + TAGBYTES + payload.len()));
-    sealed_box
+    if sealed_box.len() != (NONCEBYTES + TAGBYTES + payload.len()) {
+        return Err(AesError::EncryptionError);
+    }
+    Ok(sealed_box)
 }
 
-pub fn open(sealed_box: &[u8], key: &Key) -> Vec<u8> {
+pub fn open(sealed_box: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
     let sb_len = sealed_box.len();
     let payload_len = sb_len - NONCEBYTES - TAGBYTES;
-    assert!(sb_len > (NONCEBYTES + TAGBYTES));
+    if sb_len <= (NONCEBYTES + TAGBYTES) {
+        return Err(AesError::DecryptionError);
+    }
     let (nonce, attached) = sealed_box.split_at(NONCEBYTES);
     let (ciphertext, tag) = attached.split_at(payload_len);
     let mut payload = vec![0; payload_len];
@@ -91,16 +103,18 @@ pub fn open(sealed_box: &[u8], key: &Key) -> Vec<u8> {
             nonce.as_ptr(),
             key.0.as_ptr(),
         );
-        assert_eq!(r, 0);
+        if r != 0 {
+            return Err(AesError::DecryptionError);
+        }
     }
-    payload
+    Ok(payload)
 }
 
 #[test]
 fn seal_open() {
     let payload = vec![1, 2, 3];
     let key: Key = Key::from(randombytes::randombytes(KEYBYTES));
-    let encrypted = seal(&payload, &key);
-    let decrypted = open(&encrypted, &key);
+    let encrypted = seal(&payload, &key).unwrap();
+    let decrypted = open(&encrypted, &key).unwrap();
     assert_eq!(decrypted, payload);
 }

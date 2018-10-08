@@ -11,7 +11,7 @@ pub struct Zero {}
 
 #[derive(Clone, Debug)]
 pub struct X25519PublicKey {
-    group_element: scalarmult::curve25519::GroupElement,
+    pub group_element: scalarmult::curve25519::GroupElement,
 }
 
 impl Hash for X25519PublicKey {
@@ -194,7 +194,7 @@ pub struct UserInitKey {
 }
 
 impl UserInitKey {
-    pub fn new() -> Self {
+    pub fn fake() -> Self {
         // FIXME
         UserInitKey {
             cipher_suite: vec![0],
@@ -250,10 +250,10 @@ pub struct GroupInitKey {
     epoch: u32,
     group_size: u32,
     group_id: Vec<u8>, /* <0..2^16-1>; */
-    cipher_suite: CipherSuite,
-    add_key: X25519PublicKey,
-    //identity_frontier: Vec<MerkleNode>, /* <0..2^16-1>; */
-    ratchet_frontier: Vec<X25519PublicKey>, /* <0..2^16-1>; */
+cipher_suite: CipherSuite,
+add_key: X25519PublicKey,
+//identity_frontier: Vec<MerkleNode>, /* <0..2^16-1>; */
+ratchet_frontier: Vec<X25519PublicKey>, /* <0..2^16-1>; */
 }
 
 */

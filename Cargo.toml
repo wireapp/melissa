@@ -1,7 +1,7 @@
 [package]
-name = "treekem-rust"
+name = "melissa"
 version = "0.1.0"
-authors = ["raphaelrobert <raphael@wire.com>"]
+authors = ["Wire <opensource@wire.com>"]
 
 [dependencies]
 sodiumoxide = "^0.1.0"

@@ -427,9 +427,19 @@ impl Tree {
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
             let (mut dirpath_node, mut copath_node) = node_pair;
             let public_key = copath_node.dh_public_key.clone().unwrap();
-            let ciphertext = X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]);
-            println!("kem_to: KEMing {:?}", &dirpath_node.secret.unwrap().0[..]);
-            path.push(ciphertext);
+            if let Ok(ciphertext) =
+                X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..])
+            {
+                println!(
+                    "kem_to: KEMing secret {:?}",
+                    &dirpath_node.secret.unwrap().0[..]
+                );
+                println!("kem_to: public_key {:?}", public_key.group_element.0);
+                println!("kem_to: ciphertext {:?}", ciphertext);
+                path.push(ciphertext);
+            } else {
+                panic!("kem_to: Could not do KEM. {:?}", dirpath_node);
+            }
         }
         path
     }
@@ -440,21 +450,23 @@ impl Tree {
         size: usize,
         secret: NodeSecret,
     ) -> (Vec<X25519PublicKey>, Vec<X25519AESCiphertext>) {
-        let mut node_secret = secret;
-        node_secret.hash();
+        let node_secret = secret;
         let mut nodes = Tree::hash_up(index, size, &node_secret);
         println!("encrypt: index: {}, size: {}", index, size);
         println!("encrypt: copath: {:?}", Tree::copath(index, size));
         let mut copath_nodes = self.get_nodes_from_path(Tree::copath(index, size));
-        // strip root
-        nodes.pop();
+        // strip leaf
+        let leaf_node = nodes.remove(0);
         println!("encrypt: nodes.len(): {}", nodes.len());
         assert_eq!(copath_nodes.len(), nodes.len());
         let ciphertexts = Tree::kem_to(&mut nodes, &mut copath_nodes);
         let mut public_keys: Vec<X25519PublicKey> = Vec::new();
+        public_keys.push(leaf_node.dh_public_key.unwrap());
         for mut node in nodes {
             public_keys.push(node.dh_public_key.unwrap());
         }
+        // strip root
+        public_keys.pop();
         (public_keys, ciphertexts)
     }
 
@@ -488,17 +500,33 @@ impl Tree {
         let intersect_ciphertext = ciphertexts[kem_path_index].clone();
         let intersect_node = self.nodes[own_path[own_path_index]].clone().unwrap();
         let private_key = intersect_node.dh_private_key.unwrap();
-        let secret = X25519AES::decrypt(&private_key, &intersect_ciphertext);
-        let node_secret = NodeSecret::from_bytes(secret.as_slice());
-        println!("decrypt: node_secret: {:?}", node_secret);
-        (
-            merge_path,
-            Tree::hash_up(
-                Tree::parent(own_path[own_path_index], size),
-                size,
-                &node_secret,
-            ),
-        )
+        match X25519AES::decrypt(&private_key, &intersect_ciphertext) {
+            Ok(secret) => {
+                let node_secret = NodeSecret::from_bytes(secret.as_slice());
+                println!("decrypt: node_secret: {:?}", node_secret);
+                (
+                    merge_path,
+                    Tree::hash_up(
+                        Tree::parent(own_path[own_path_index], size),
+                        size,
+                        &node_secret,
+                    ),
+                )
+            }
+            Err(_) => {
+                println!(
+                    "decrypt: could not decrypt for node {}",
+                    own_path[own_path_index]
+                );
+                println!("decrypt: private_key: {:?}", private_key);
+                println!(
+                    "decrypt: public_key: {:?}",
+                    private_key.derive_public_key().group_element.0
+                );
+                println!("decrypt: ciphertext: {:?}", intersect_ciphertext);
+                panic!("")
+            }
+        }
     }
 
     pub fn apply_kem_path(

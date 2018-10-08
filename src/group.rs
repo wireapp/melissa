@@ -39,7 +39,7 @@ pub struct Group {
     group_epoch: GroupEpoch,
     group_secret: GroupSecret,
     roster: Vec<BasicCredential>,
-    tree: Tree,
+    pub tree: Tree,
     update_secret: Option<(u64, NodeSecret)>,
     transcript: Vec<HandshakeMessage>,
 }
@@ -154,6 +154,13 @@ impl Group {
             let hash = hasher.finish();
             if stored_hash == hash {
                 println!("process_update: apply own update");
+                let own_leaf = Node::from_secret(&node_secret);
+                let nodes = Tree::hash_up(index, size, &node_secret);
+                let mut merge_path = Tree::dirpath(index, size);
+                merge_path.push(Tree::root(size));
+                self.tree.merge(merge_path, &nodes);
+
+                /*
                 let public_merge_path = Tree::dirpath(index, size);
                 let mut public_nodes = Vec::new();
                 for key in update.nodes.iter() {
@@ -165,13 +172,41 @@ impl Group {
                 let mut merge_path = Tree::dirpath(index, size);
                 merge_path.push(Tree::root(size));
                 self.tree.merge(merge_path, &nodes);
+                */
+                println!(
+                    "process_update: new own leaf public key: {:?}",
+                    update.nodes.first().unwrap().group_element.0
+                );
+                assert_eq!(
+                    update.nodes.first().unwrap().group_element.0,
+                    own_leaf.dh_public_key.unwrap().group_element.0
+                );
+                assert_eq!(
+                    update.nodes.first().unwrap().group_element.0,
+                    self.tree
+                        .get_own_leaf()
+                        .dh_public_key
+                        .unwrap()
+                        .group_element
+                        .0
+                );
             } else {
                 self.tree
                     .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
+                println!(
+                    "process_update: new leaf public key (for node {}): {:?}",
+                    index,
+                    update.nodes.first().unwrap().group_element.0
+                );
             }
         } else {
             self.tree
                 .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
+            println!(
+                "process_update: new leaf public key (for node {}): {:?}",
+                index,
+                update.nodes.first().unwrap().group_element.0
+            );
         }
         self.update_secret = None;
         self.transcript
@@ -224,8 +259,8 @@ fn create_group() {
 
     assert_eq!(group.tree.get_own_leaf().secret.unwrap().0, secret.0);
 
-    let init_key = UserInitKey::new();
-    let (welcome, add) = group.create_add(init_key.clone());
+    let init_key = UserInitKey::fake();
+    let (_welcome, add) = group.create_add(init_key.clone());
     group.process_add(&add);
     let remove = group.create_remove(1);
     group.process_remove(&remove);
@@ -233,17 +268,14 @@ fn create_group() {
     group.process_update(0, &update);
 
     for _ in 0..100 {
-        let (welcome2, add2) = group.create_add(init_key.clone());
+        let (_, add2) = group.create_add(init_key.clone());
         group.process_add(&add2);
     }
-
-    let mut group2 = Group::new_from_welcome(&welcome);
-    //group2.process_add(&add);
 }
 
 #[test]
 fn alice_bob_charlie_walk_into_a_group() {
-    let init_key = UserInitKey::new();
+    let init_key = UserInitKey::fake();
 
     // Create a group with Alice
     let mut group_alice = Group::new(1);
@@ -265,11 +297,21 @@ fn alice_bob_charlie_walk_into_a_group() {
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
 
     // Bob updates
+    println!("---------------------------- Bob creates an update");
     let update_bob = group_bob.create_update();
+    println!("---------------------------- Bob applies his update");
     group_bob.process_update(1, &update_bob);
-    println!("test: bob group secret: {:?}", group_bob.get_group_secret());
+    println!("---------------------------- Alice applies Bob's update");
     group_alice.process_update(1, &update_bob);
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
+
+    // Alice updates
+    println!("---------------------------- Alice creates an update");
+    let update_alice = group_alice.create_update();
+    println!("---------------------------- Alice applies her update");
+    group_alice.process_update(0, &update_alice);
+    println!("---------------------------- Bob applies Alice's update");
+    group_bob.process_update(0, &update_alice);
 
     // Bob adds Charlie
     let (welcome_bob_charlie, add_bob_charlie) = group_bob.create_add(init_key.clone());
@@ -311,6 +353,15 @@ fn alice_bob_charlie_walk_into_a_group() {
         group_bob.get_group_secret()
     );
 
+    // Alice updates
+    println!("---------------------------- Alice creates an update");
+    let update_alice = group_alice.create_update();
+    println!("---------------------------- Alice applies her update");
+    group_alice.process_update(0, &update_alice);
+    println!("---------------------------- Bob applies Alice's update");
+    group_bob.process_update(0, &update_alice);
+    println!("---------------------------- Charlie applies Alice's update");
+    group_charlie.process_update(0, &update_alice);
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
     assert_eq!(
         group_alice.get_group_secret(),
