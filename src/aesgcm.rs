@@ -2,11 +2,16 @@ extern crate libsodium_sys;
 extern crate sodiumoxide;
 
 use libsodium_sys::{
-    crypto_aead_aes256gcm_ABYTES, crypto_aead_aes256gcm_NPUBBYTES,
     crypto_aead_aes256gcm_decrypt_detached, crypto_aead_aes256gcm_encrypt_detached,
 };
+use ring::aead as ring_aead;
 use sodiumoxide::randombytes;
 use std::*;
+
+pub enum ALGORITHM {
+    AES128GCM,
+    AES256GCM,
+}
 
 #[derive(Debug)]
 pub enum AesError {
@@ -14,9 +19,10 @@ pub enum AesError {
     DecryptionError,
 }
 
-pub const NONCEBYTES: usize = crypto_aead_aes256gcm_NPUBBYTES as usize;
-pub const KEYBYTES: usize = 32;
-pub const TAGBYTES: usize = crypto_aead_aes256gcm_ABYTES as usize;
+pub const NONCEBYTES: usize = 12;
+pub const AES128KEYBYTES: usize = 16;
+pub const AES256KEYBYTES: usize = 32;
+pub const TAGBYTES: usize = 16;
 
 pub struct Nonce(pub [u8; NONCEBYTES]);
 
@@ -27,29 +33,87 @@ impl Nonce {
         bytes[..NONCEBYTES].clone_from_slice(&random_bytes[..NONCEBYTES]);
         Nonce(bytes)
     }
-}
 
-pub struct Key(pub [u8; KEYBYTES]);
-
-impl Key {
-    pub fn from_slice(slice: &[u8]) -> Key {
-        assert_eq!(slice.len(), KEYBYTES);
-        let mut key = [0u8; KEYBYTES];
-        key[..KEYBYTES].clone_from_slice(&slice[..KEYBYTES]);
-        Key(key)
+    pub fn from_slice(slice: &[u8]) -> Nonce {
+        assert_eq!(slice.len(), NONCEBYTES);
+        let mut bytes = [0u8; NONCEBYTES];
+        bytes.copy_from_slice(slice);
+        Nonce(bytes)
     }
 }
 
-impl From<Vec<u8>> for Key {
-    fn from(v: Vec<u8>) -> Key {
-        assert_eq!(v.len(), KEYBYTES);
-        let mut key = [0u8; KEYBYTES];
-        key[..KEYBYTES].clone_from_slice(&v[..KEYBYTES]);
-        Key(key)
+pub struct Aes128Key(pub [u8; AES128KEYBYTES]);
+
+impl Aes128Key {
+    pub fn from_slice(slice: &[u8]) -> Aes128Key {
+        assert_eq!(slice.len(), AES128KEYBYTES);
+        let mut key = [0u8; AES128KEYBYTES];
+        key[..AES128KEYBYTES].clone_from_slice(&slice[..AES128KEYBYTES]);
+        Aes128Key(key)
     }
 }
 
-pub fn seal(payload: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
+impl From<Vec<u8>> for Aes128Key {
+    fn from(v: Vec<u8>) -> Aes128Key {
+        Aes128Key::from_slice(v.as_slice())
+    }
+}
+
+pub struct Aes256Key(pub [u8; AES256KEYBYTES]);
+
+impl Aes256Key {
+    pub fn from_slice(slice: &[u8]) -> Aes256Key {
+        assert_eq!(slice.len(), AES256KEYBYTES);
+        let mut key = [0u8; AES256KEYBYTES];
+        key[..AES256KEYBYTES].clone_from_slice(&slice[..AES256KEYBYTES]);
+        Aes256Key(key)
+    }
+}
+
+impl From<Vec<u8>> for Aes256Key {
+    fn from(v: Vec<u8>) -> Aes256Key {
+        Aes256Key::from_slice(v.as_slice())
+    }
+}
+
+pub fn aes_128_seal(payload: &[u8], key: &Aes128Key, nonce: &Nonce) -> Result<Vec<u8>, AesError> {
+    let sealing_key = ring_aead::SealingKey::new(&ring_aead::AES_128_GCM, &key.0).unwrap();
+    let mut buffer: Vec<u8> = Vec::with_capacity(payload.len() + ring_aead::MAX_TAG_LEN);
+    for byte in payload {
+        buffer.push(*byte);
+    }
+    for _ in 0..ring_aead::MAX_TAG_LEN {
+        buffer.push(0);
+    }
+    match ring_aead::seal_in_place(
+        &sealing_key,
+        &nonce.0,
+        &[],
+        &mut buffer,
+        ring_aead::MAX_TAG_LEN,
+    ) {
+        Ok(size) => Ok(buffer[..size].to_vec()),
+        Err(_) => Err(AesError::EncryptionError),
+    }
+}
+
+pub fn aes_128_open(
+    sealed_box: &[u8],
+    key: &Aes128Key,
+    nonce: &Nonce,
+) -> Result<Vec<u8>, AesError> {
+    let opening_key = ring_aead::OpeningKey::new(&ring_aead::AES_128_GCM, &key.0).unwrap();
+    let mut buffer: Vec<u8> = Vec::with_capacity(sealed_box.len());
+    for byte in sealed_box {
+        buffer.push(*byte);
+    }
+    match ring_aead::open_in_place(&opening_key, &nonce.0, &[], 0, &mut buffer) {
+        Ok(bytes) => Ok(bytes.to_vec()),
+        Err(_) => Err(AesError::DecryptionError),
+    }
+}
+
+pub fn aes_256_seal(payload: &[u8], key: &Aes256Key) -> Result<Vec<u8>, AesError> {
     let nonce = Nonce::new_random();
     let mut ciphertext: Vec<u8> = vec![0; payload.len()];
     let mut tag: Vec<u8> = vec![0; TAGBYTES];
@@ -81,7 +145,7 @@ pub fn seal(payload: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
     Ok(sealed_box)
 }
 
-pub fn open(sealed_box: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
+pub fn aes_256_open(sealed_box: &[u8], key: &Aes256Key) -> Result<Vec<u8>, AesError> {
     let sb_len = sealed_box.len();
     let payload_len = sb_len - NONCEBYTES - TAGBYTES;
     if sb_len <= (NONCEBYTES + TAGBYTES) {
@@ -113,8 +177,17 @@ pub fn open(sealed_box: &[u8], key: &Key) -> Result<Vec<u8>, AesError> {
 #[test]
 fn seal_open() {
     let payload = vec![1, 2, 3];
-    let key: Key = Key::from(randombytes::randombytes(KEYBYTES));
-    let encrypted = seal(&payload, &key).unwrap();
-    let decrypted = open(&encrypted, &key).unwrap();
+
+    // AES128
+    let key: Aes128Key = Aes128Key::from(randombytes::randombytes(AES128KEYBYTES));
+    let nonce = Nonce::new_random();
+    let encrypted = aes_128_seal(&payload, &key, &nonce).unwrap();
+    let decrypted = aes_128_open(&encrypted, &key, &nonce).unwrap();
+    assert_eq!(decrypted, payload);
+
+    // AES256
+    let key: Aes256Key = Aes256Key::from(randombytes::randombytes(AES256KEYBYTES));
+    let encrypted = aes_256_seal(&payload, &key).unwrap();
+    let decrypted = aes_256_open(&encrypted, &key).unwrap();
     assert_eq!(decrypted, payload);
 }

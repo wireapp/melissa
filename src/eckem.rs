@@ -2,6 +2,7 @@ use aesgcm;
 use codec::*;
 use keys::*;
 use sodiumoxide::crypto::aead;
+use sodiumoxide::crypto::auth;
 use std::*;
 
 pub type EcKemError = aesgcm::AesError;
@@ -28,6 +29,22 @@ impl Codec for X25519AESCiphertext {
     }
 }
 
+pub fn derive_ecies_secrets(shared_secret: &[u8]) -> (aesgcm::Aes128Key, aesgcm::Nonce) {
+    let mut key_label_str = b"mls10 ecies key".to_vec();
+    key_label_str.push(0x01);
+    let key_key = auth::hmacsha256::Key::from_slice(shared_secret).unwrap();
+    let key_tag = auth::hmacsha256::authenticate(&key_label_str, &key_key);
+    let key_truncated_hmac = &key_tag[0..aesgcm::AES128KEYBYTES];
+    assert_eq!(key_truncated_hmac.len(), 16);
+    let ecies_key: aesgcm::Aes128Key = aesgcm::Aes128Key::from_slice(key_truncated_hmac);
+    let mut nonce_label_str = b"mls10 ecies nonce".to_vec();
+    nonce_label_str.push(0x01);
+    let nonce_key = auth::hmacsha256::Key::from_slice(shared_secret).unwrap();
+    let nonce_tag = auth::hmacsha256::authenticate(&nonce_label_str, &nonce_key);
+    let ecies_nonce: aesgcm::Nonce = aesgcm::Nonce::from_slice(&nonce_tag[0..aesgcm::NONCEBYTES]);
+    (ecies_key, ecies_nonce)
+}
+
 impl X25519AES {
     pub fn encrypt(
         public_key: &X25519PublicKey,
@@ -35,9 +52,8 @@ impl X25519AES {
     ) -> Result<X25519AESCiphertext, EcKemError> {
         let kp = X25519KeyPair::new_random();
         let secret = kp.private_key.shared_secret(public_key).unwrap();
-        let key = aesgcm::Key::from_slice(&secret[..]);
-        let sealed_box = aesgcm::seal(payload, &key)?;
-
+        let (key, nonce) = derive_ecies_secrets(&secret);
+        let sealed_box = aesgcm::aes_128_seal(payload, &key, &nonce)?;
         Ok(X25519AESCiphertext {
             public_key: kp.public_key,
             sealed_box,
@@ -48,8 +64,8 @@ impl X25519AES {
         ciphertext: &X25519AESCiphertext,
     ) -> Result<Vec<u8>, EcKemError> {
         let secret = private_key.shared_secret(&ciphertext.public_key).unwrap();
-        let key = aesgcm::Key::from_slice(&secret[..]);
-        aesgcm::open(&ciphertext.sealed_box[..], &key)
+        let (key, nonce) = derive_ecies_secrets(&secret);
+        aesgcm::aes_128_open(&ciphertext.sealed_box[..], &key, &nonce)
     }
 }
 

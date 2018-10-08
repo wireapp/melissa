@@ -1,4 +1,5 @@
 extern crate libsodium_sys;
+extern crate ring;
 extern crate sodiumoxide;
 
 pub mod aesgcm;

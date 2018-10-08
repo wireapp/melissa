@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["Wire <opensource@wire.com>"]
 
 [dependencies]
-sodiumoxide = "^0.1.0"
-libsodium-sys = "^0.1.0"
+sodiumoxide = "^0.1"
+libsodium-sys = "^0.1"
+ring = "^0.13"
