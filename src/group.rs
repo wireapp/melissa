@@ -1,3 +1,19 @@
+// Wire
+// Copyright (C) 2018 Wire Swiss GmbH
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see http://www.gnu.org/licenses/.
+
 use codec::*;
 use keys::*;
 use messages::*;
@@ -133,7 +149,6 @@ impl Group {
             nodes,
             path: ciphertexts,
         };
-        // save new node secret for later, as we can't process our own updates
         // FIXME should be derived from roster
         let mut hasher = DefaultHasher::new();
         update.hash(&mut hasher);
@@ -148,35 +163,15 @@ impl Group {
         // FIXME check if participant number matches the sender in the roster
         let kem_path = Tree::copath(index, size);
         if let Some((stored_hash, node_secret)) = self.update_secret {
-            println!("process_update: node_secret found: {:?}", node_secret);
             let mut hasher = DefaultHasher::new();
             update.hash(&mut hasher);
             let hash = hasher.finish();
             if stored_hash == hash {
-                println!("process_update: apply own update");
                 let own_leaf = Node::from_secret(&node_secret);
                 let nodes = Tree::hash_up(index, size, &node_secret);
                 let mut merge_path = Tree::dirpath(index, size);
                 merge_path.push(Tree::root(size));
                 self.tree.merge(merge_path, &nodes);
-
-                /*
-                let public_merge_path = Tree::dirpath(index, size);
-                let mut public_nodes = Vec::new();
-                for key in update.nodes.iter() {
-                    public_nodes.push(Node::new_from_public_key(key));
-                }
-                println!("process_update: public_merge_path: {:?}", public_merge_path);
-                self.tree.merge(public_merge_path, &public_nodes);
-                let nodes = Tree::hash_up(index, size, &node_secret);
-                let mut merge_path = Tree::dirpath(index, size);
-                merge_path.push(Tree::root(size));
-                self.tree.merge(merge_path, &nodes);
-                */
-                println!(
-                    "process_update: new own leaf public key: {:?}",
-                    update.nodes.first().unwrap().group_element.0
-                );
                 assert_eq!(
                     update.nodes.first().unwrap().group_element.0,
                     own_leaf.dh_public_key.unwrap().group_element.0
@@ -193,20 +188,10 @@ impl Group {
             } else {
                 self.tree
                     .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
-                println!(
-                    "process_update: new leaf public key (for node {}): {:?}",
-                    index,
-                    update.nodes.first().unwrap().group_element.0
-                );
             }
         } else {
             self.tree
                 .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
-            println!(
-                "process_update: new leaf public key (for node {}): {:?}",
-                index,
-                update.nodes.first().unwrap().group_element.0
-            );
         }
         self.update_secret = None;
         self.transcript
@@ -220,7 +205,6 @@ impl Group {
         let size = self.tree.get_leaf_count();
         let leaf_secret = NodeSecret::new_random();
         let (nodes, ciphertexts) = self.tree.encrypt(index, size, leaf_secret);
-        println!("create_remove: ciphertexts length: {}", ciphertexts.len());
         // FIXME sign the Remove message
         Remove {
             removed: participant,
@@ -232,7 +216,6 @@ impl Group {
         let size = self.tree.get_leaf_count();
         let index = remove.removed * 2; // FIXME should be checked against the roster
         let kem_path = Tree::copath(index, size);
-        println!("process_remove: kem_path: {:?}", kem_path);
         assert_eq!(kem_path.len(), remove.path.len());
         self.tree
             .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
@@ -279,38 +262,23 @@ fn alice_bob_charlie_walk_into_a_group() {
 
     // Create a group with Alice
     let mut group_alice = Group::new(1);
-    println!(
-        "test: alice group secret: {:?}",
-        group_alice.get_group_secret()
-    );
 
     // Alice addes Bob
     let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(init_key.clone());
     group_alice.process_add(&add_alice_bob);
-    println!(
-        "test: alice group secret: {:?}",
-        group_alice.get_group_secret()
-    );
 
     let mut group_bob = Group::new_from_welcome(&welcome_alice_bob);
-    println!("test: bob group secret: {:?}", group_bob.get_group_secret());
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
 
     // Bob updates
-    println!("---------------------------- Bob creates an update");
     let update_bob = group_bob.create_update();
-    println!("---------------------------- Bob applies his update");
     group_bob.process_update(1, &update_bob);
-    println!("---------------------------- Alice applies Bob's update");
     group_alice.process_update(1, &update_bob);
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
 
     // Alice updates
-    println!("---------------------------- Alice creates an update");
     let update_alice = group_alice.create_update();
-    println!("---------------------------- Alice applies her update");
     group_alice.process_update(0, &update_alice);
-    println!("---------------------------- Bob applies Alice's update");
     group_bob.process_update(0, &update_alice);
 
     // Bob adds Charlie
@@ -331,36 +299,15 @@ fn alice_bob_charlie_walk_into_a_group() {
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
 
     // Charlie updates
-    println!("---------------------------- Charlie creates an update");
     let update_charlie = group_charlie.create_update();
-    println!("---------------------------- Alice applies Charlie's update");
     group_alice.process_update(2, &update_charlie);
-    println!("---------------------------- Bob applies Charlie's update");
     group_bob.process_update(2, &update_charlie);
-    println!("---------------------------- Charlie applies Charlie's update");
     group_charlie.process_update(2, &update_charlie);
 
-    println!(
-        "test: alice group secret:   {:?}",
-        group_alice.get_group_secret()
-    );
-    println!(
-        "test: bob group secret:     {:?}",
-        group_bob.get_group_secret()
-    );
-    println!(
-        "test: charlie group secret: {:?}",
-        group_bob.get_group_secret()
-    );
-
     // Alice updates
-    println!("---------------------------- Alice creates an update");
     let update_alice = group_alice.create_update();
-    println!("---------------------------- Alice applies her update");
     group_alice.process_update(0, &update_alice);
-    println!("---------------------------- Bob applies Alice's update");
     group_bob.process_update(0, &update_alice);
-    println!("---------------------------- Charlie applies Alice's update");
     group_charlie.process_update(0, &update_alice);
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
     assert_eq!(
@@ -369,25 +316,9 @@ fn alice_bob_charlie_walk_into_a_group() {
     );
 
     // Charlie removes Bob
-    println!("---------------------------- Charlie removes Bob");
     let remove_charlie_bob = group_charlie.create_remove(1);
-    println!("---------------------------- Alice applies Charlie's update");
     group_alice.process_remove(&remove_charlie_bob);
-    println!("---------------------------- Charlie applies Charlie's update");
     group_charlie.process_remove(&remove_charlie_bob);
-
-    println!(
-        "test: alice group secret:   {:?}",
-        group_alice.get_group_secret()
-    );
-    println!(
-        "test: bob group secret:     {:?}",
-        group_bob.get_group_secret()
-    );
-    println!(
-        "test: charlie group secret: {:?}",
-        group_charlie.get_group_secret()
-    );
 
     assert_eq!(
         group_alice.get_group_secret(),
