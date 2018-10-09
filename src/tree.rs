@@ -1,3 +1,19 @@
+// Wire
+// Copyright (C) 2018 Wire Swiss GmbH
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see http://www.gnu.org/licenses/.
+
 use codec::*;
 use eckem::*;
 use keys::*;
@@ -379,7 +395,6 @@ impl Tree {
     }
 
     pub fn merge(&mut self, path: Vec<usize>, nodes: &[Node]) {
-        println!("merge: merging {:?}", path);
         assert_eq!(path.len(), nodes.len());
         let mut max: usize = 0;
         for n in path.iter() {
@@ -392,14 +407,6 @@ impl Tree {
         }
         for (node, index) in nodes.iter().zip(path) {
             self.nodes[index] = Some(node.clone());
-            match self.nodes[index].clone().unwrap().secret {
-                Some(secret) => {
-                    println!("merge: merging secret: {:?}", secret);
-                }
-                None => {
-                    println!("merge: merging public key");
-                }
-            }
         }
     }
 
@@ -411,7 +418,6 @@ impl Tree {
         dirpath.push(Tree::root(size));
         for _ in dirpath {
             let node = Node::from_secret(&node_secret);
-            println!("hash_up: {:?}", node_secret);
             nodes.push(node);
             node_secret.hash();
         }
@@ -427,19 +433,9 @@ impl Tree {
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
             let (mut dirpath_node, mut copath_node) = node_pair;
             let public_key = copath_node.dh_public_key.clone().unwrap();
-            if let Ok(ciphertext) =
-                X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..])
-            {
-                println!(
-                    "kem_to: KEMing secret {:?}",
-                    &dirpath_node.secret.unwrap().0[..]
-                );
-                println!("kem_to: public_key {:?}", public_key.group_element.0);
-                println!("kem_to: ciphertext {:?}", ciphertext);
-                path.push(ciphertext);
-            } else {
-                panic!("kem_to: Could not do KEM. {:?}", dirpath_node);
-            }
+            let ciphertext =
+                X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
+            path.push(ciphertext);
         }
         path
     }
@@ -452,12 +448,9 @@ impl Tree {
     ) -> (Vec<X25519PublicKey>, Vec<X25519AESCiphertext>) {
         let node_secret = secret;
         let mut nodes = Tree::hash_up(index, size, &node_secret);
-        println!("encrypt: index: {}, size: {}", index, size);
-        println!("encrypt: copath: {:?}", Tree::copath(index, size));
         let mut copath_nodes = self.get_nodes_from_path(Tree::copath(index, size));
         // strip leaf
         let leaf_node = nodes.remove(0);
-        println!("encrypt: nodes.len(): {}", nodes.len());
         assert_eq!(copath_nodes.len(), nodes.len());
         let ciphertexts = Tree::kem_to(&mut nodes, &mut copath_nodes);
         let mut public_keys: Vec<X25519PublicKey> = Vec::new();
@@ -487,46 +480,22 @@ impl Tree {
                 }
             }
         }
-        println!(
-            "decrypt: found intersection at {}, {}",
-            own_path_index, kem_path_index
-        );
-        println!("decrypt: intersection node: {}", own_path[own_path_index]);
-        println!("decrypt: own node: {:?}", self.get_own_leaf());
         let mut merge_path = Tree::dirpath(Tree::parent(self.own_leaf_index, size), size);
         merge_path.push(Tree::root(size));
         merge_path.drain(0..own_path_index);
-        println!("decrypt: merge_path: {:?}", merge_path);
         let intersect_ciphertext = ciphertexts[kem_path_index].clone();
         let intersect_node = self.nodes[own_path[own_path_index]].clone().unwrap();
         let private_key = intersect_node.dh_private_key.unwrap();
-        match X25519AES::decrypt(&private_key, &intersect_ciphertext) {
-            Ok(secret) => {
-                let node_secret = NodeSecret::from_bytes(secret.as_slice());
-                println!("decrypt: node_secret: {:?}", node_secret);
-                (
-                    merge_path,
-                    Tree::hash_up(
-                        Tree::parent(own_path[own_path_index], size),
-                        size,
-                        &node_secret,
-                    ),
-                )
-            }
-            Err(_) => {
-                println!(
-                    "decrypt: could not decrypt for node {}",
-                    own_path[own_path_index]
-                );
-                println!("decrypt: private_key: {:?}", private_key);
-                println!(
-                    "decrypt: public_key: {:?}",
-                    private_key.derive_public_key().group_element.0
-                );
-                println!("decrypt: ciphertext: {:?}", intersect_ciphertext);
-                panic!("")
-            }
-        }
+        let secret = X25519AES::decrypt(&private_key, &intersect_ciphertext).unwrap();
+        let node_secret = NodeSecret::from_bytes(secret.as_slice());
+        (
+            merge_path,
+            Tree::hash_up(
+                Tree::parent(own_path[own_path_index], size),
+                size,
+                &node_secret,
+            ),
+        )
     }
 
     pub fn apply_kem_path(
@@ -537,10 +506,6 @@ impl Tree {
         ciphertext: &[X25519AESCiphertext],
         public_keys: &[X25519PublicKey],
     ) {
-        println!(
-            "apply_kem_path: index: {}, size: {}, kem_path: {:?}",
-            index, size, kem_path
-        );
         let public_merge_path = Tree::dirpath(index, size);
         let mut public_nodes = Vec::new();
         for key in public_keys.iter() {
