@@ -55,7 +55,7 @@ pub struct Group {
     group_epoch: GroupEpoch,
     group_secret: GroupSecret,
     roster: Vec<BasicCredential>,
-    pub tree: Tree,
+    tree: Tree,
     update_secret: Option<(u64, NodeSecret)>,
     transcript: Vec<HandshakeMessage>,
 }
