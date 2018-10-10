@@ -1,6 +1,6 @@
 # melissa
 
-image:https://travis-ci.org/wireapp/melissa.svg?branch=master["Build Status", link="https://travis-ci.org/wireapp/melissa"]
+![build status](https://travis-ci.org/wireapp/melissa.svg?branch=master)
 
 This is a PoC implementation of [Messaging Layer Security](https://github.com/mlswg/mls-protocol/blob/master/draft-ietf-mls-protocol.md) (using TreeKEM) in Rust.
 
