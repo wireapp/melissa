@@ -1,5 +1,7 @@
 # melissa
 
+image:https://travis-ci.org/wireapp/melissa.svg?branch=master["Build Status", link="https://travis-ci.org/wireapp/melissa"]
+
 This is a PoC implementation of [Messaging Layer Security](https://github.com/ekr/mls-protocol/blob/master/draft-barnes-mls-protocol.md) (using TreeKEM) in Rust.
 
 ## Dependencies
@@ -8,7 +10,7 @@ This is a PoC implementation of [Messaging Layer Security](https://github.com/ek
 
 ## Build
 
- - install libsodium (and make sure it can be found with something like pkg-config)
+ - install libsodium (and make sure it can be found by using something like pkg-config)
  - run `cargo build`
 
 ## Test
