@@ -51,7 +51,6 @@ pub fn derive_ecies_secrets(shared_secret: &[u8]) -> (aesgcm::Aes128Key, aesgcm:
     let key_key = auth::hmacsha256::Key::from_slice(shared_secret).unwrap();
     let key_tag = auth::hmacsha256::authenticate(&key_label_str, &key_key);
     let key_truncated_hmac = &key_tag[0..aesgcm::AES128KEYBYTES];
-    assert_eq!(key_truncated_hmac.len(), 16);
     let ecies_key: aesgcm::Aes128Key = aesgcm::Aes128Key::from_slice(key_truncated_hmac);
     let mut nonce_label_str = b"mls10 ecies nonce".to_vec();
     nonce_label_str.push(0x01);

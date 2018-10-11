@@ -20,6 +20,7 @@ use messages::*;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::*;
 use tree::*;
+use treemath;
 
 #[derive(Clone)]
 pub struct Member {}
@@ -100,7 +101,7 @@ impl Group {
 
         let leaf_secret = NodeSecret::new_random();
         let (public_nodes, ciphertexts) = self.tree.encrypt(index, size, leaf_secret);
-        let public_path = Tree::dirpath(index, size);
+        let public_path = treemath::dirpath(index, size);
         assert_eq!(public_path.len(), public_nodes.len());
 
         let add = Add {
@@ -128,7 +129,7 @@ impl Group {
         // FIXME verify init key signature
         let size = self.tree.get_leaf_count() + 1;
         let index = self.tree.get_leaf_count() * 2;
-        let kem_path = Tree::copath(index, size);
+        let kem_path = treemath::copath(index, size);
         assert_eq!(kem_path.len(), add.path.len());
         self.tree
             .apply_kem_path(index, size, &kem_path, &add.path, &add.nodes);
@@ -161,30 +162,16 @@ impl Group {
         let size = self.tree.get_leaf_count();
         let index = participant * 2;
         // FIXME check if participant number matches the sender in the roster
-        let kem_path = Tree::copath(index, size);
+        let kem_path = treemath::copath(index, size);
         if let Some((stored_hash, node_secret)) = self.update_secret {
             let mut hasher = DefaultHasher::new();
             update.hash(&mut hasher);
             let hash = hasher.finish();
             if stored_hash == hash {
-                let own_leaf = Node::from_secret(&node_secret);
                 let nodes = Tree::hash_up(index, size, &node_secret);
-                let mut merge_path = Tree::dirpath(index, size);
-                merge_path.push(Tree::root(size));
+                let mut merge_path = treemath::dirpath(index, size);
+                merge_path.push(treemath::root(size));
                 self.tree.merge(merge_path, &nodes);
-                assert_eq!(
-                    update.nodes.first().unwrap().group_element.0,
-                    own_leaf.dh_public_key.unwrap().group_element.0
-                );
-                assert_eq!(
-                    update.nodes.first().unwrap().group_element.0,
-                    self.tree
-                        .get_own_leaf()
-                        .dh_public_key
-                        .unwrap()
-                        .group_element
-                        .0
-                );
             } else {
                 self.tree
                     .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
@@ -215,7 +202,7 @@ impl Group {
     pub fn process_remove(&mut self, remove: &Remove) {
         let size = self.tree.get_leaf_count();
         let index = remove.removed * 2; // FIXME should be checked against the roster
-        let kem_path = Tree::copath(index, size);
+        let kem_path = treemath::copath(index, size);
         assert_eq!(kem_path.len(), remove.path.len());
         self.tree
             .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
@@ -263,7 +250,7 @@ fn alice_bob_charlie_walk_into_a_group() {
     // Create a group with Alice
     let mut group_alice = Group::new(1);
 
-    // Alice addes Bob
+    // Alice adds Bob
     let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(init_key.clone());
     group_alice.process_add(&add_alice_bob);
 
