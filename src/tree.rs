@@ -19,7 +19,7 @@ use eckem::*;
 use keys::*;
 use sodiumoxide::crypto::hash::sha256::*;
 use sodiumoxide::randombytes;
-use std::ops::Range;
+use treemath;
 
 pub const NODESECRETBYTES: usize = 32;
 
@@ -144,177 +144,6 @@ pub struct Tree {
 }
 
 impl Tree {
-    // -----BEGIN TREE MATH-----
-    // FIXME check the math once more
-    pub fn log2(n: usize) -> usize {
-        let mut r = 0;
-        let mut m = n;
-        while m > 1 {
-            m >>= 1;
-            r += 1;
-        }
-        r
-    }
-
-    pub fn pow2(n: usize) -> usize {
-        match n {
-            0 => 1,
-            _ => 2 << (n - 1),
-        }
-    }
-
-    pub fn level(n: usize) -> usize {
-        if (n & 0x01) == 0 {
-            return 0;
-        }
-        let mut k = 0;
-        while ((n >> k) & 0x01) == 1 {
-            k += 1;
-        }
-        k
-    }
-
-    pub fn node_width(n: usize) -> usize {
-        2 * (n - 1) + 1
-    }
-
-    pub fn assert_in_range(x: usize, n: usize) {
-        if x > Tree::node_width(n) {
-            panic!("node index out of range ({} > {})", x, n);
-        }
-    }
-
-    pub fn root(n: usize) -> usize {
-        let w = Tree::node_width(n);
-        (1 << Tree::log2(w)) - 1
-    }
-
-    pub fn left(x: usize) -> usize {
-        if Tree::level(x) == 0 {
-            return x;
-        }
-        x ^ (0x01 << (Tree::level(x) - 1))
-    }
-
-    pub fn right(x: usize, n: usize) -> usize {
-        Tree::assert_in_range(x, n);
-        if Tree::level(x) == 0 {
-            return x;
-        }
-        let mut r = x ^ (0x03 << (Tree::level(x) - 1));
-        while r >= Tree::node_width(n) {
-            r = Tree::left(r);
-        }
-        r
-    }
-
-    pub fn parent_step(x: usize) -> usize {
-        let k = Tree::level(x);
-        (x | (1 << k)) & !(1 << (k + 1))
-    }
-
-    pub fn parent(x: usize, n: usize) -> usize {
-        Tree::assert_in_range(x, n);
-
-        if x == Tree::root(n) {
-            return x;
-        }
-        let mut p = Tree::parent_step(x);
-        while p >= Tree::node_width(n) {
-            p = Tree::parent_step(p);
-        }
-        p
-    }
-
-    pub fn sibling(x: usize, n: usize) -> usize {
-        Tree::assert_in_range(x, n);
-
-        let p = Tree::parent(x, n);
-        if x < p {
-            return Tree::right(p, n);
-        } else if x > p {
-            return Tree::left(p);
-        }
-        // root's sibling is itself
-        p
-    }
-
-    // Ordered from leaf to root
-    // Includes leaf, but not root
-    pub fn dirpath(x: usize, n: usize) -> Vec<usize> {
-        Tree::assert_in_range(x, n);
-        if x == Tree::root(n) {
-            return Vec::new();
-        }
-        let mut dirpath = vec![x];
-        let mut parent = Tree::parent(x, n);
-        let root = Tree::root(n);
-        while parent != root {
-            dirpath.push(parent);
-            parent = Tree::parent(parent, n);
-        }
-        dirpath
-    }
-
-    // Ordered from leaf to root
-    pub fn copath(x: usize, n: usize) -> Vec<usize> {
-        Tree::dirpath(x, n)
-            .iter()
-            .map(|&x| Tree::sibling(x, n))
-            .collect()
-    }
-
-    // Ordered from left to right
-    pub fn frontier(n: usize) -> Vec<usize> {
-        assert!(n > 0);
-
-        let last = 2 * (n - 1);
-        let mut frontier = Tree::copath(last, n);
-        frontier.reverse();
-
-        if !frontier.is_empty() {
-            if frontier[frontier.len() - 1] != last {
-                frontier.push(last);
-            }
-        } else {
-            frontier.push(0);
-        }
-
-        while frontier.len() > 1 {
-            let r = frontier[frontier.len() - 1];
-            let parent = Tree::parent(r, n);
-            if parent != Tree::parent_step(r) {
-                break;
-            }
-
-            // Replace the last two nodes with their parent
-            let length = frontier.len();
-            frontier.truncate(length - 2);
-            frontier.push(parent);
-        }
-        frontier
-    }
-
-    pub fn shadow(x: usize, n: usize) -> Vec<usize> {
-        let mut height = Tree::level(x);
-        let mut left = x;
-        let mut right = x;
-        while height > 0 {
-            left = Tree::left(left);
-            right = Tree::right(right, n);
-            height -= 1;
-        }
-
-        // +1 for the end of the range?
-        (0..=right - left).map(|x| x + left).collect()
-    }
-
-    pub fn leaves(n: usize) -> Vec<usize> {
-        Range { start: 0, end: n }.map(|x| 2 * x).collect()
-    }
-
-    // -----END TREE MATH-----
-
     pub fn new_from_leaf(leaf: &Node) -> Tree {
         let mut tree = Tree {
             nodes: vec![Some(leaf.clone())],
@@ -349,12 +178,12 @@ impl Tree {
     }
 
     pub fn get_root(&self) -> Node {
-        let root_index = Tree::root(self.get_leaf_count());
+        let root_index = treemath::root(self.get_leaf_count());
         self.nodes[root_index].clone().unwrap()
     }
 
     pub fn set_root(&mut self, node: Node) {
-        let index = Tree::root(self.get_leaf_count());
+        let index = treemath::root(self.get_leaf_count());
         self.nodes[index] = Some(node);
     }
 
@@ -414,8 +243,8 @@ impl Tree {
         // Compute hashes up the tree
         let mut nodes = Vec::new();
         let mut node_secret = *secret;
-        let mut dirpath = Tree::dirpath(index, size);
-        dirpath.push(Tree::root(size));
+        let mut dirpath = treemath::dirpath(index, size);
+        dirpath.push(treemath::root(size));
         for _ in dirpath {
             let node = Node::from_secret(&node_secret);
             nodes.push(node);
@@ -448,7 +277,7 @@ impl Tree {
     ) -> (Vec<X25519PublicKey>, Vec<X25519AESCiphertext>) {
         let node_secret = secret;
         let mut nodes = Tree::hash_up(index, size, &node_secret);
-        let mut copath_nodes = self.get_nodes_from_path(Tree::copath(index, size));
+        let mut copath_nodes = self.get_nodes_from_path(treemath::copath(index, size));
         // strip leaf
         let leaf_node = nodes.remove(0);
         assert_eq!(copath_nodes.len(), nodes.len());
@@ -469,7 +298,7 @@ impl Tree {
         kem_path: &[usize],
         ciphertexts: &[X25519AESCiphertext],
     ) -> (Vec<usize>, Vec<Node>) {
-        let own_path = Tree::dirpath(self.own_leaf_index, size);
+        let own_path = treemath::dirpath(self.own_leaf_index, size);
         let mut own_path_index = 0;
         let mut kem_path_index = 0;
         for (opi, op_element) in own_path.iter().enumerate() {
@@ -480,8 +309,8 @@ impl Tree {
                 }
             }
         }
-        let mut merge_path = Tree::dirpath(Tree::parent(self.own_leaf_index, size), size);
-        merge_path.push(Tree::root(size));
+        let mut merge_path = treemath::dirpath(treemath::parent(self.own_leaf_index, size), size);
+        merge_path.push(treemath::root(size));
         merge_path.drain(0..own_path_index);
         let intersect_ciphertext = ciphertexts[kem_path_index].clone();
         let intersect_node = self.nodes[own_path[own_path_index]].clone().unwrap();
@@ -491,7 +320,7 @@ impl Tree {
         (
             merge_path,
             Tree::hash_up(
-                Tree::parent(own_path[own_path_index], size),
+                treemath::parent(own_path[own_path_index], size),
                 size,
                 &node_secret,
             ),
@@ -506,7 +335,7 @@ impl Tree {
         ciphertext: &[X25519AESCiphertext],
         public_keys: &[X25519PublicKey],
     ) {
-        let public_merge_path = Tree::dirpath(index, size);
+        let public_merge_path = treemath::dirpath(index, size);
         let mut public_nodes = Vec::new();
         for key in public_keys.iter() {
             public_nodes.push(Node::new_from_public_key(key));
@@ -514,186 +343,5 @@ impl Tree {
         self.merge(public_merge_path, &public_nodes);
         let (merge_path, nodes) = self.decrypt(size, &kem_path, ciphertext);
         self.merge(merge_path, &nodes);
-    }
-}
-
-#[test]
-fn test_root() {
-    let n = 0x0b;
-    let index = Range { start: 0, end: n };
-    let a_root = vec![
-        0x00, 0x01, 0x03, 0x03, 0x07, 0x07, 0x07, 0x07, 0x0f, 0x0f, 0x0f,
-    ];
-
-    let q: Vec<usize> = index.map(|x| Tree::root(x + 1)).collect();
-    assert_eq!(q, a_root);
-}
-
-#[test]
-fn test_relations() {
-    let n = 0x0b;
-    let e = 21;
-
-    let index = Range { start: 0, end: e };
-
-    let a_left = vec![
-        0x00, 0x00, 0x02, 0x01, 0x04, 0x04, 0x06, 0x03, 0x08, 0x08, 0x0a, 0x09, 0x0c, 0x0c, 0x0e,
-        0x07, 0x10, 0x10, 0x12, 0x11, 0x14,
-    ];
-
-    let a_right = vec![
-        0x00, 0x02, 0x02, 0x05, 0x04, 0x06, 0x06, 0x0b, 0x08, 0x0a, 0x0a, 0x0d, 0x0c, 0x0e, 0x0e,
-        0x13, 0x10, 0x12, 0x12, 0x14, 0x14,
-    ];
-
-    let a_parent = vec![
-        0x01, 0x03, 0x01, 0x07, 0x05, 0x03, 0x05, 0x0f, 0x09, 0x0b, 0x09, 0x07, 0x0d, 0x0b, 0x0d,
-        0x0f, 0x11, 0x13, 0x11, 0x0f, 0x13,
-    ];
-
-    let a_sibling = vec![
-        0x02, 0x05, 0x00, 0x0b, 0x06, 0x01, 0x04, 0x13, 0x0a, 0x0d, 0x08, 0x03, 0x0e, 0x09, 0x0c,
-        0x0f, 0x12, 0x14, 0x10, 0x07, 0x11,
-    ];
-
-    assert_eq!(
-        index.clone().map(|x| Tree::left(x)).collect::<Vec<usize>>(),
-        a_left
-    );
-
-    assert_eq!(
-        index
-            .clone()
-            .map(|x| Tree::right(x, n))
-            .collect::<Vec<usize>>(),
-        a_right
-    );
-    assert_eq!(
-        index
-            .clone()
-            .map(|x| Tree::parent(x, n))
-            .collect::<Vec<usize>>(),
-        a_parent
-    );
-    assert_eq!(
-        index
-            .clone()
-            .map(|x| Tree::sibling(x, n))
-            .collect::<Vec<usize>>(),
-        a_sibling
-    );
-}
-
-#[test]
-fn test_frontier() {
-    let n = 0x0b;
-
-    let a_frontier = vec![
-        vec![0x00],
-        vec![0x01],
-        vec![0x01, 0x04],
-        vec![0x03],
-        vec![0x03, 0x08],
-        vec![0x03, 0x09],
-        vec![0x03, 0x09, 0x0c],
-        vec![0x07],
-        vec![0x07, 0x10],
-        vec![0x07, 0x11],
-        vec![0x07, 0x11, 0x14],
-    ];
-
-    for x in 0..n {
-        let f = Tree::frontier(x + 1);
-        assert_eq!(f, a_frontier[x]);
-    }
-}
-
-#[test]
-fn test_paths() {
-    let n = 0x0b;
-
-    let a_dirpath = vec![
-        vec![0, 1, 3, 7],
-        vec![1, 3, 7],
-        vec![2, 1, 3, 7],
-        vec![3, 7],
-        vec![4, 5, 3, 7],
-        vec![5, 3, 7],
-        vec![6, 5, 3, 7],
-        vec![7],
-        vec![8, 9, 11, 7],
-        vec![9, 11, 7],
-        vec![10, 9, 11, 7],
-        vec![11, 7],
-        vec![12, 13, 11, 7],
-        vec![13, 11, 7],
-        vec![14, 13, 11, 7],
-        vec![],
-        vec![16, 17, 19],
-        vec![17, 19],
-        vec![18, 17, 19],
-        vec![19],
-        vec![20, 19],
-    ];
-
-    let a_copath = vec![
-        vec![2, 5, 11, 19],
-        vec![5, 11, 19],
-        vec![0, 5, 11, 19],
-        vec![11, 19],
-        vec![6, 1, 11, 19],
-        vec![1, 11, 19],
-        vec![4, 1, 11, 19],
-        vec![19],
-        vec![10, 13, 3, 19],
-        vec![13, 3, 19],
-        vec![8, 13, 3, 19],
-        vec![3, 19],
-        vec![14, 9, 3, 19],
-        vec![9, 3, 19],
-        vec![12, 9, 3, 19],
-        vec![],
-        vec![18, 20, 7],
-        vec![20, 7],
-        vec![16, 20, 7],
-        vec![7],
-        vec![17, 7],
-    ];
-
-    let a_shadow = vec![
-        vec![0],
-        vec![0, 1, 2],
-        vec![2],
-        vec![0, 1, 2, 3, 4, 5, 6],
-        vec![4],
-        vec![4, 5, 6],
-        vec![6],
-        vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
-        vec![8],
-        vec![8, 9, 10],
-        vec![10],
-        vec![8, 9, 10, 11, 12, 13, 14],
-        vec![12],
-        vec![12, 13, 14],
-        vec![14],
-        vec![
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        ],
-        vec![16],
-        vec![16, 17, 18],
-        vec![18],
-        vec![16, 17, 18, 19, 20],
-        vec![20],
-    ];
-
-    for x in 0..Tree::node_width(n) {
-        let d = Tree::dirpath(x, n);
-        assert_eq!(d, a_dirpath[x]);
-
-        let c = Tree::copath(x, n);
-        assert_eq!(c, a_copath[x]);
-
-        let s = Tree::shadow(x, n);
-        assert_eq!(s, a_shadow[x]);
     }
 }

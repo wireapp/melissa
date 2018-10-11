@@ -25,3 +25,4 @@ pub mod group;
 pub mod keys;
 pub mod messages;
 pub mod tree;
+pub mod treemath;
