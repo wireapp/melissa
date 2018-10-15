@@ -17,6 +17,7 @@
 use codec::*;
 use keys::*;
 use messages::*;
+use sodiumoxide::randombytes;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::*;
 use tree::*;
@@ -26,8 +27,31 @@ use treemath;
 pub struct Member {}
 
 pub const GROUPSECRETBYTES: usize = 32;
-pub type GroupId = u16;
-pub type GroupEpoch = u32;
+pub const GROUPIDBYTES: usize = 255;
+
+#[derive(Clone)]
+pub struct GroupId(pub [u8; GROUPIDBYTES]);
+
+impl GroupId {
+    pub fn random() -> Self {
+        Self::from_bytes(&randombytes::randombytes(GROUPIDBYTES))
+    }
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut group_id = [0u8; GROUPIDBYTES];
+        group_id.clone_from_slice(bytes);
+        GroupId(group_id)
+    }
+}
+
+impl Codec for GroupId {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(GroupId::from_bytes(&bytes))
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
 pub struct GroupSecret(pub [u8; GROUPSECRETBYTES]);
@@ -50,6 +74,8 @@ impl Codec for GroupSecret {
     }
 }
 
+pub type GroupEpoch = u32;
+
 #[derive(Clone)]
 pub struct Group {
     group_id: GroupId,
@@ -58,15 +84,13 @@ pub struct Group {
     roster: Vec<BasicCredential>,
     tree: Tree,
     update_secret: Option<(u64, NodeSecret)>,
-    transcript: Vec<HandshakeMessage>,
+    transcript: Vec<GroupOperationValue>,
 }
 
 impl Group {
     pub fn new(group_id: GroupId) -> Self {
         let secret = NodeSecret::new_random();
         let own_leaf = Node::from_secret(&secret);
-        let mut bytes = [0u8; GROUPSECRETBYTES];
-        bytes.clone_from_slice(&secret.0[..]);
         let group_secret = GroupSecret::from_bytes(&secret.0[..]);
         let tree = Tree::new_from_leaf(&own_leaf);
         Group {
@@ -79,13 +103,22 @@ impl Group {
             transcript: vec![],
         }
     }
+    pub fn process_handshake(&mut self, hm: GroupOperationValue, sender: usize) {
+        match hm {
+            GroupOperationValue::Add(add) => self.process_add(&add),
+            GroupOperationValue::Update(update) => self.process_update(sender, &update),
+            GroupOperationValue::Remove(remove) => self.process_remove(&remove),
+            _ => (),
+        }
+    }
+
     pub fn new_from_welcome(welcome: &Welcome) -> Self {
         let tree_size = welcome.tree.len();
         assert!(tree_size > 0);
         let tree =
             Tree::new_from_public_keys(&welcome.tree, welcome.tree.len() - 1, &welcome.leaf_secret); // FIXME derive slot from roster
         Group {
-            group_id: welcome.group_id,
+            group_id: welcome.group_id.clone(),
             group_epoch: welcome.epoch,
             group_secret: welcome.init_secret,
             roster: Vec::new(), // FIXME initialize from roster
@@ -114,7 +147,7 @@ impl Group {
         welcome_group.process_add(&add);
 
         let welcome = Welcome {
-            group_id: self.group_id,
+            group_id: self.group_id.clone(),
             epoch: self.group_epoch,
             roster: self.roster.clone(), // FIXME
             tree: welcome_group.tree.get_public_key_tree(),
@@ -139,7 +172,7 @@ impl Group {
             public_key: add.init_key.identity_key,
         };
         self.roster.push(bc);
-        self.transcript.push(HandshakeMessage::Add(add.clone()));
+        self.transcript.push(GroupOperationValue::Add(add.clone()));
     }
     pub fn create_update(&mut self) -> Update {
         let own_leaf_index = self.tree.get_own_leaf_index();
@@ -182,7 +215,7 @@ impl Group {
         }
         self.update_secret = None;
         self.transcript
-            .push(HandshakeMessage::Update(update.clone()));
+            .push(GroupOperationValue::Update(update.clone()));
         self.rotate_group_secret();
     }
     pub fn create_remove(&self, participant: usize) -> Remove {
@@ -208,7 +241,7 @@ impl Group {
             .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
         self.rotate_group_secret();
         self.transcript
-            .push(HandshakeMessage::Remove(remove.clone()));
+            .push(GroupOperationValue::Remove(remove.clone()));
     }
     pub fn get_members() {}
     pub fn get_group_secret(&self) -> GroupSecret {
@@ -224,7 +257,7 @@ impl Group {
 
 #[test]
 fn create_group() {
-    let mut group = Group::new(0);
+    let mut group = Group::new(GroupId::random());
     let secret = group.get_group_secret();
 
     assert_eq!(group.tree.get_own_leaf().secret.unwrap().0, secret.0);
@@ -248,7 +281,7 @@ fn alice_bob_charlie_walk_into_a_group() {
     let init_key = UserInitKey::fake();
 
     // Create a group with Alice
-    let mut group_alice = Group::new(1);
+    let mut group_alice = Group::new(GroupId::random());
 
     // Alice adds Bob
     let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(init_key.clone());

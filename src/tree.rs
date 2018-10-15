@@ -94,7 +94,7 @@ impl Node {
         Node {
             secret: None,
             dh_private_key: None,
-            dh_public_key: Some(key.clone()),
+            dh_public_key: Some(*key),
         }
     }
 
@@ -107,14 +107,14 @@ impl Node {
     }
 
     pub fn get_public_key(&mut self) -> Option<X25519PublicKey> {
-        match self.dh_public_key.clone() {
+        match self.dh_public_key {
             Some(key) => Some(key),
             None => match self.secret {
                 Some(secret) => {
                     let kp = X25519KeyPair::new_from_secret(&secret);
                     self.dh_private_key = Some(kp.private_key);
                     self.dh_public_key = Some(kp.public_key);
-                    self.dh_public_key.clone()
+                    self.dh_public_key
                 }
                 None => None,
             },
@@ -139,14 +139,14 @@ impl Node {
 
 #[derive(Clone)]
 pub struct Tree {
-    nodes: Vec<Option<Node>>,
+    nodes: Vec<Node>,
     own_leaf_index: usize,
 }
 
 impl Tree {
     pub fn new_from_leaf(leaf: &Node) -> Tree {
         let mut tree = Tree {
-            nodes: vec![Some(leaf.clone())],
+            nodes: vec![leaf.clone()],
             own_leaf_index: 0,
         };
         let secret = leaf.secret.unwrap();
@@ -161,12 +161,12 @@ impl Tree {
         own_leaf_index: usize,
         leaf_secret: &NodeSecret,
     ) -> Tree {
-        let mut nodes: Vec<Option<Node>> = Vec::new();
+        let mut nodes: Vec<Node> = Vec::new();
         for key in keys {
-            nodes.push(Some(Node::new_from_public_key(key)));
+            nodes.push(Node::new_from_public_key(key));
         }
         let own_node = Node::from_secret(leaf_secret);
-        nodes[own_leaf_index] = Some(own_node);
+        nodes[own_leaf_index] = own_node;
         Tree {
             nodes,
             own_leaf_index,
@@ -179,18 +179,18 @@ impl Tree {
 
     pub fn get_root(&self) -> Node {
         let root_index = treemath::root(self.get_leaf_count());
-        self.nodes[root_index].clone().unwrap()
+        self.nodes[root_index].clone()
     }
 
     pub fn set_root(&mut self, node: Node) {
         let index = treemath::root(self.get_leaf_count());
-        self.nodes[index] = Some(node);
+        self.nodes[index] = node;
     }
 
     pub fn get_nodes_from_path(&self, path: Vec<usize>) -> Vec<Node> {
         let mut nodes: Vec<Node> = Vec::new();
         for i in path {
-            nodes.push(self.nodes[i].clone().unwrap());
+            nodes.push(self.nodes[i].clone());
         }
         nodes
     }
@@ -198,7 +198,7 @@ impl Tree {
     pub fn get_public_keys_from_path(&self, path: Vec<usize>) -> Vec<X25519PublicKey> {
         let mut keys = Vec::new();
         for index in path {
-            keys.push(self.nodes[index].clone().unwrap().dh_public_key.unwrap());
+            keys.push(self.nodes[index].clone().dh_public_key.unwrap());
         }
         keys
     }
@@ -206,13 +206,13 @@ impl Tree {
     pub fn get_public_key_tree(&self) -> Vec<X25519PublicKey> {
         let mut tree = Vec::new();
         for node in self.nodes.iter() {
-            tree.push(node.clone().unwrap().dh_public_key.unwrap());
+            tree.push(node.clone().dh_public_key.unwrap());
         }
         tree
     }
 
     pub fn get_own_leaf(&self) -> Node {
-        self.nodes[self.own_leaf_index].clone().unwrap()
+        self.nodes[self.own_leaf_index].clone()
     }
 
     pub fn get_own_leaf_index(&self) -> usize {
@@ -232,10 +232,10 @@ impl Tree {
             }
         }
         if max >= self.nodes.len() {
-            self.nodes.resize(max + 1, Some(Node::new_blank()));
+            self.nodes.resize(max + 1, Node::new_blank());
         }
         for (node, index) in nodes.iter().zip(path) {
-            self.nodes[index] = Some(node.clone());
+            self.nodes[index] = node.clone();
         }
     }
 
@@ -261,7 +261,7 @@ impl Tree {
         assert_eq!(dirpath_nodes.len(), copath_nodes.len());
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
             let (mut dirpath_node, mut copath_node) = node_pair;
-            let public_key = copath_node.dh_public_key.clone().unwrap();
+            let public_key = copath_node.dh_public_key.unwrap();
             let ciphertext =
                 X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
             path.push(ciphertext);
@@ -313,7 +313,7 @@ impl Tree {
         merge_path.push(treemath::root(size));
         merge_path.drain(0..own_path_index);
         let intersect_ciphertext = ciphertexts[kem_path_index].clone();
-        let intersect_node = self.nodes[own_path[own_path_index]].clone().unwrap();
+        let intersect_node = self.nodes[own_path[own_path_index]].clone();
         let private_key = intersect_node.dh_private_key.unwrap();
         let secret = X25519AES::decrypt(&private_key, &intersect_ciphertext).unwrap();
         let node_secret = NodeSecret::from_bytes(secret.as_slice());
