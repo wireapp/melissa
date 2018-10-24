@@ -17,7 +17,7 @@
 use codec::*;
 use keys::*;
 use messages::*;
-use sodiumoxide::randombytes;
+use sodiumoxide::{randombytes, utils};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::*;
 use tree::*;
@@ -53,7 +53,7 @@ impl Codec for GroupId {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[derive(Clone, PartialEq, Eq, Default, Debug)]
 pub struct GroupSecret(pub [u8; GROUPSECRETBYTES]);
 
 impl GroupSecret {
@@ -71,6 +71,12 @@ impl Codec for GroupSecret {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let bytes = decode_vec_u8(cursor)?;
         Ok(GroupSecret::from_bytes(&bytes))
+    }
+}
+
+impl Drop for GroupSecret {
+    fn drop(&mut self) {
+        utils::memzero(&mut self.0)
     }
 }
 
@@ -120,7 +126,7 @@ impl Group {
         Group {
             group_id: welcome.group_id.clone(),
             group_epoch: welcome.epoch,
-            group_secret: welcome.init_secret,
+            group_secret: welcome.init_secret.clone(),
             roster: Vec::new(), // FIXME initialize from roster
             tree,
             update_secret: None,
@@ -245,7 +251,7 @@ impl Group {
     }
     pub fn get_members() {}
     pub fn get_group_secret(&self) -> GroupSecret {
-        self.group_secret
+        self.group_secret.clone()
     }
     pub fn rotate_group_secret(&mut self) {
         let root = self.tree.get_root();

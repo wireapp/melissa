@@ -263,3 +263,16 @@ fn test_constants() {
     use sodiumoxide::crypto::hash::sha256::*;
     assert_eq!(DIGESTBYTES, NODESECRETBYTES);
 }
+
+#[test]
+fn test_signature() {
+    use utils::*;
+
+    let payload = vec![0, 1, 2, 3];
+    let pk = SignaturePublicKey::from_slice(&hex_to_bytes(
+        "6f8a35bff581235d8757b2f3cea6e6bfa7c5005852ac8ccf3c63a2c45c514d0d",
+    ))
+    .unwrap();
+    let sig = Signature::from_slice(&hex_to_bytes("4d51569eb56fc808cad8d8707110bcbf5c3daae9d394af77d48e840b2750ab15ea04c0fd30658625a20d0446fbd8ae09c6cc67f1004ed8c79818b74bef4fa107")).unwrap();
+    assert!(ed25519::verify_detached(&sig, &payload, &pk));
+}

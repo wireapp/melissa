@@ -15,7 +15,7 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
-use eckem::*;
+use crypto::eckem::*;
 use keys::*;
 use sodiumoxide::crypto::hash::sha256::*;
 use sodiumoxide::randombytes;

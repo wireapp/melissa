@@ -136,23 +136,6 @@ pub fn leaves(n: usize) -> Vec<usize> {
     Range { start: 0, end: n }.map(|x| 2 * x).collect()
 }
 
-pub fn bytes_to_hex(bytes: &[u8]) -> String {
-    let mut hex = String::new();
-    for b in bytes {
-        hex += &format!("{:02X}", *b);
-    }
-    hex
-}
-
-pub fn hex_to_bytes(hex: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for i in 0..(hex.len() / 2) {
-        let b = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap();
-        bytes.push(b);
-    }
-    bytes
-}
-
 #[derive(Clone, Copy)]
 pub enum FunctionType {
     OneArg(fn(usize) -> usize),
@@ -240,6 +223,8 @@ pub fn read_vector(rt: &ReturnType, buffer: &[u8]) -> ReturnType {
 
 #[test]
 fn print_test_vectors() {
+    use utils::*;
+
     let size = 255;
     println!(
         "Test vector for root() with size {}:\n{}",
@@ -320,6 +305,8 @@ fn print_test_vectors() {
 
 #[test]
 fn compare_test_vectors() {
+    use utils::*;
+
     fn test_vector(
         test_vector_hex: &str,
         range_start: usize,
