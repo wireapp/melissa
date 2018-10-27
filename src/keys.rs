@@ -143,6 +143,51 @@ pub type SignatureScheme = u16;
 
 pub const ED25519: SignatureScheme = 0;
 
+#[derive(Clone)]
+pub struct Identity {
+    pub id: Vec<u8>,
+    pub public_key: SignaturePublicKey,
+    private_key: SignaturePrivateKey,
+}
+
+impl Identity {
+    pub fn random() -> Self {
+        let id = randombytes::randombytes(4).to_vec();
+        let (public_key, private_key) = ed25519::gen_keypair();
+        Self {
+            id,
+            public_key,
+            private_key,
+        }
+    }
+
+    pub fn sign(&self, payload: &[u8]) -> Signature {
+        ed25519::sign_detached(payload, &self.private_key)
+    }
+    pub fn verify(&self, payload: &[u8], signature: &Signature) -> bool {
+        ed25519::verify_detached(signature, payload, &self.public_key)
+    }
+}
+
+impl Drop for Identity {
+    fn drop(&mut self) {
+        utils::memzero(&mut self.private_key.0);
+        utils::memzero(&mut self.public_key.0);
+        utils::memzero(&mut self.id);
+    }
+}
+
+pub trait Signable: Sized {
+    fn unsigned_payload(&self) -> Vec<u8>;
+
+    fn sign(&mut self, id: &Identity) -> Signature {
+        id.sign(&self.unsigned_payload())
+    }
+    fn verify(&self, id: &Identity, signature: &Signature) -> bool {
+        id.verify(&self.unsigned_payload(), signature)
+    }
+}
+
 #[repr(u8)]
 pub enum CredentialType {
     Basic = 0,
@@ -154,6 +199,12 @@ pub enum CredentialType {
 pub struct BasicCredential {
     pub identity: Vec<u8>, // <0..2^16-1>;
     pub public_key: SignaturePublicKey,
+}
+
+impl BasicCredential {
+    pub fn verify(&self, payload: &[u8], signature: &Signature) -> bool {
+        ed25519::verify_detached(signature, payload, &self.public_key)
+    }
 }
 
 impl Codec for BasicCredential {
@@ -186,16 +237,33 @@ pub struct UserInitKey {
 }
 
 impl UserInitKey {
-    pub fn fake() -> Self {
-        // FIXME
-        UserInitKey {
+    pub fn new(init_keys: &[X25519PublicKey], identity: &Identity) -> Self {
+        let mut init_key = Self {
             cipher_suite: vec![AES128GCM_CURVE25519_SHA256],
-            init_keys: vec![],
-            identity_key: SignaturePublicKey::from_slice(&[0u8; ed25519::PUBLICKEYBYTES]).unwrap(),
+            init_keys: init_keys.to_owned(),
+            identity_key: identity.public_key,
             algorithm: ED25519,
             signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
-        }
+        };
+        init_key.signature = identity.sign(&init_key.unsigned_payload());
+        init_key
     }
+    /*
+    pub fn random() -> Self {
+        let (public_key, private_key) = ed25519::gen_keypair();
+        UserInitKey::new(vec![], private_key, public_key)
+    }
+    */
+    pub fn self_verify(&self) -> bool {
+        ed25519::verify_detached(
+            &self.signature,
+            &self.unsigned_payload(),
+            &self.identity_key,
+        )
+    }
+}
+
+impl Signable for UserInitKey {
     fn unsigned_payload(&self) -> Vec<u8> {
         let buffer = &mut Vec::new();
         encode_vec_u16(buffer, &self.cipher_suite);
@@ -203,16 +271,6 @@ impl UserInitKey {
         self.identity_key.encode(buffer);
         self.algorithm.encode(buffer);
         buffer.to_vec()
-    }
-    pub fn sign(&mut self, sk: &SignaturePrivateKey) {
-        self.signature = ed25519::sign_detached(&self.unsigned_payload(), sk);
-    }
-    pub fn verify(&self) -> bool {
-        ed25519::verify_detached(
-            &self.signature,
-            &self.unsigned_payload(),
-            &self.identity_key,
-        )
     }
 }
 
@@ -238,6 +296,28 @@ impl Codec for UserInitKey {
             algorithm,
             signature,
         })
+    }
+}
+
+pub struct UserInitKeyBundle {
+    pub init_key: UserInitKey,
+    private_keys: Vec<X25519PrivateKey>,
+}
+
+impl UserInitKeyBundle {
+    pub fn new(num: usize, identity: &Identity) -> Self {
+        let mut private_keys = Vec::new();
+        let mut public_keys = Vec::new();
+        for _ in 0..num {
+            let kp = X25519KeyPair::new_random();
+            private_keys.push(kp.private_key);
+            public_keys.push(kp.public_key);
+        }
+        let init_key = UserInitKey::new(&public_keys, identity);
+        UserInitKeyBundle {
+            init_key,
+            private_keys,
+        }
     }
 }
 

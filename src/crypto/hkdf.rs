@@ -42,12 +42,9 @@ impl Drop for Key {
 pub struct Len(u16);
 
 impl Len {
-    pub fn new(i: u16) -> Option<Len> {
-        if i as usize > 255 * HASH_LEN {
-            None
-        } else {
-            Some(Len(i))
-        }
+    pub fn new(i: u16) -> Self {
+        assert!((i as usize) <= HASH_LEN);
+        Len(i)
     }
 }
 

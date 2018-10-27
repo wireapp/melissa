@@ -18,7 +18,6 @@ use codec::*;
 use crypto::eckem::*;
 use group::*;
 use keys::*;
-use sodiumoxide::crypto::sign::ed25519;
 use std::convert::From;
 use tree::*;
 
@@ -130,10 +129,10 @@ pub struct Handshake {
     pub operation: GroupOperation,
     pub signer_index: u32,
     pub algorithm: SignatureScheme,
-    pub signature: Signature,
+    pub signature: Option<Signature>,
 }
 
-impl Handshake {
+impl Signable for Handshake {
     fn unsigned_payload(&self) -> Vec<u8> {
         let buffer = &mut Vec::new();
         self.prior_epoch.encode(buffer);
@@ -141,12 +140,6 @@ impl Handshake {
         self.signer_index.encode(buffer);
         self.algorithm.encode(buffer);
         buffer.to_vec()
-    }
-    pub fn sign(&mut self, sk: &SignaturePrivateKey) {
-        self.signature = ed25519::sign_detached(&self.unsigned_payload(), sk);
-    }
-    pub fn verify(&self, pk: &SignaturePublicKey) -> bool {
-        ed25519::verify_detached(&self.signature, &self.unsigned_payload(), pk)
     }
 }
 
@@ -156,14 +149,14 @@ impl Codec for Handshake {
         self.operation.encode(buffer);
         self.signer_index.encode(buffer);
         self.algorithm.encode(buffer);
-        self.signature.encode(buffer);
+        self.signature.unwrap().encode(buffer);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let prior_epoch = GroupEpoch::decode(cursor)?;
         let operation = GroupOperation::decode(cursor)?;
         let signer_index = u32::decode(cursor)?;
         let algorithm = SignatureScheme::decode(cursor)?;
-        let signature = Signature::decode(cursor)?;
+        let signature = Some(Signature::decode(cursor)?);
         Ok(Handshake {
             prior_epoch,
             operation,

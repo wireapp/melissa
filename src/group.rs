@@ -84,6 +84,7 @@ pub type GroupEpoch = u32;
 
 #[derive(Clone)]
 pub struct Group {
+    id: Identity,
     group_id: GroupId,
     group_epoch: GroupEpoch,
     group_secret: GroupSecret,
@@ -94,47 +95,43 @@ pub struct Group {
 }
 
 impl Group {
-    pub fn new(group_id: GroupId) -> Self {
+    pub fn new(id: Identity, credential: BasicCredential, group_id: GroupId) -> Self {
         let secret = NodeSecret::new_random();
         let own_leaf = Node::from_secret(&secret);
         let group_secret = GroupSecret::from_bytes(&secret.0[..]);
         let tree = Tree::new_from_leaf(&own_leaf);
         Group {
+            id,
             group_id,
             group_epoch: 0,
             group_secret, // FIXME
-            roster: vec![],
+            roster: vec![credential],
             tree,
             update_secret: None,
             transcript: vec![],
         }
     }
-    pub fn process_handshake(&mut self, hm: GroupOperationValue, sender: usize) {
-        match hm {
-            GroupOperationValue::Add(add) => self.process_add(&add),
-            GroupOperationValue::Update(update) => self.process_update(sender, &update),
-            GroupOperationValue::Remove(remove) => self.process_remove(&remove),
-            _ => (),
-        }
-    }
-
-    pub fn new_from_welcome(welcome: &Welcome) -> Self {
+    pub fn new_from_welcome(id: Identity, welcome: &Welcome) -> Self {
         let tree_size = welcome.tree.len();
         assert!(tree_size > 0);
+        let roster = welcome.roster.clone();
+        let own_slot = roster.iter().position(|k| k.public_key == id.public_key);
+        assert!(own_slot.is_some());
         let tree =
-            Tree::new_from_public_keys(&welcome.tree, welcome.tree.len() - 1, &welcome.leaf_secret); // FIXME derive slot from roster
+            Tree::new_from_public_keys(&welcome.tree, own_slot.unwrap() * 2, &welcome.leaf_secret);
         Group {
+            id,
             group_id: welcome.group_id.clone(),
             group_epoch: welcome.epoch,
             group_secret: welcome.init_secret.clone(),
-            roster: Vec::new(), // FIXME initialize from roster
+            roster: welcome.roster.clone(),
             tree,
             update_secret: None,
             transcript: vec![],
         }
     }
-    pub fn create_add(&mut self, init_key: UserInitKey) -> (Welcome, Add) {
-        // FIXME verify init key signature
+    pub fn create_add(&mut self, id: BasicCredential, init_key: &UserInitKey) -> (Welcome, Add) {
+        assert!(init_key.self_verify());
         let size = self.tree.get_leaf_count() + 1;
         let index = self.tree.get_leaf_count() * 2;
 
@@ -146,16 +143,19 @@ impl Group {
         let add = Add {
             nodes: public_nodes,
             path: ciphertexts,
-            init_key,
+            init_key: init_key.clone(),
         };
 
         let mut welcome_group = self.clone();
         welcome_group.process_add(&add);
 
+        let mut welcome_roster = self.roster.clone();
+        welcome_roster.push(id);
+
         let welcome = Welcome {
             group_id: self.group_id.clone(),
             epoch: self.group_epoch,
-            roster: self.roster.clone(), // FIXME
+            roster: welcome_roster,
             tree: welcome_group.tree.get_public_key_tree(),
             transcript: Vec::new(), // FIXME
             init_secret: welcome_group.get_group_secret(),
@@ -249,7 +249,41 @@ impl Group {
         self.transcript
             .push(GroupOperationValue::Remove(remove.clone()));
     }
-    pub fn get_members() {}
+    pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
+        let signer_index = self.tree.get_own_leaf_index() as u32;
+        let prior_epoch = self.group_epoch;
+        let algorithm = ED25519;
+        let mut hs = Handshake {
+            prior_epoch,
+            operation: group_operation,
+            signer_index,
+            algorithm,
+            signature: None,
+        };
+        hs.signature = Some(hs.sign(&self.id));
+        hs
+    }
+    pub fn process_handshake(&mut self, hs: Handshake) {
+        let sender = hs.signer_index as usize;
+        assert_eq!(hs.prior_epoch, self.group_epoch);
+        assert_eq!(hs.algorithm, ED25519);
+        assert!(sender < self.roster.len());
+        {
+            let signer = &self.roster[sender];
+            assert!(signer.verify(&hs.unsigned_payload(), &hs.signature.unwrap()));
+        }
+
+        let group_operation_value = hs.operation.group_operation;
+        match group_operation_value {
+            GroupOperationValue::Add(add) => self.process_add(&add),
+            GroupOperationValue::Update(update) => self.process_update(sender, &update),
+            GroupOperationValue::Remove(remove) => self.process_remove(&remove),
+            _ => (),
+        }
+    }
+    pub fn get_members(&self) -> Vec<BasicCredential> {
+        self.roster.clone()
+    }
     pub fn get_group_secret(&self) -> GroupSecret {
         self.group_secret.clone()
     }
@@ -259,41 +293,50 @@ impl Group {
         self.group_secret = GroupSecret(root.secret.unwrap().0);
         self.group_epoch += 1;
     }
-}
-
-#[test]
-fn create_group() {
-    let mut group = Group::new(GroupId::random());
-    let secret = group.get_group_secret();
-
-    assert_eq!(group.tree.get_own_leaf().secret.unwrap().0, secret.0);
-
-    let init_key = UserInitKey::fake();
-    let (_welcome, add) = group.create_add(init_key.clone());
-    group.process_add(&add);
-    let remove = group.create_remove(1);
-    group.process_remove(&remove);
-    let update = group.create_update();
-    group.process_update(0, &update);
-
-    for _ in 0..100 {
-        let (_, add2) = group.create_add(init_key.clone());
-        group.process_add(&add2);
+    pub fn encode_group_state(&self, buffer: &mut Vec<u8>) {
+        self.group_id.encode(buffer);
+        self.group_epoch.encode(buffer);
+        encode_vec_u16(buffer, &self.roster);
+        encode_vec_u16(buffer, &self.tree.get_public_key_tree());
+        encode_vec_u16(buffer, &self.transcript); // FIXME
     }
 }
 
 #[test]
 fn alice_bob_charlie_walk_into_a_group() {
-    let init_key = UserInitKey::fake();
+    // Define identities
+    let alice_identity = Identity::random();
+    let bob_identity = Identity::random();
+    let charlie_identity = Identity::random();
+
+    let alice_credential = BasicCredential {
+        identity: "Alice".as_bytes().to_vec(),
+        public_key: alice_identity.public_key,
+    };
+    let bob_credential = BasicCredential {
+        identity: "Bob".as_bytes().to_vec(),
+        public_key: bob_identity.public_key,
+    };
+    let charlie_credential = BasicCredential {
+        identity: "Charlie".as_bytes().to_vec(),
+        public_key: charlie_identity.public_key,
+    };
+
+    // Generate UserInitKeys
+    let bob_init_key_bundle = UserInitKeyBundle::new(1, &bob_identity);
+    let bob_init_key = bob_init_key_bundle.init_key.clone();
+
+    let charlie_init_key_bundle = UserInitKeyBundle::new(1, &charlie_identity);
+    let charlie_init_key = charlie_init_key_bundle.init_key.clone();
 
     // Create a group with Alice
-    let mut group_alice = Group::new(GroupId::random());
+    let mut group_alice = Group::new(alice_identity, alice_credential, GroupId::random());
 
     // Alice adds Bob
-    let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(init_key.clone());
+    let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(bob_credential, &bob_init_key);
     group_alice.process_add(&add_alice_bob);
 
-    let mut group_bob = Group::new_from_welcome(&welcome_alice_bob);
+    let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
     assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
 
     // Bob updates
@@ -308,8 +351,9 @@ fn alice_bob_charlie_walk_into_a_group() {
     group_bob.process_update(0, &update_alice);
 
     // Bob adds Charlie
-    let (welcome_bob_charlie, add_bob_charlie) = group_bob.create_add(init_key.clone());
-    let mut group_charlie = Group::new_from_welcome(&welcome_bob_charlie);
+    let (welcome_bob_charlie, add_bob_charlie) =
+        group_bob.create_add(charlie_credential, &charlie_init_key);
+    let mut group_charlie = Group::new_from_welcome(charlie_identity, &welcome_bob_charlie);
 
     group_alice.process_add(&add_bob_charlie);
     assert_eq!(
