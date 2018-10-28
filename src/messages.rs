@@ -15,10 +15,16 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
-use eckem::*;
+use crypto::eckem::X25519AESCiphertext;
+use crypto::schedule::InitSecret;
 use group::*;
 use keys::*;
+use std::convert::From;
 use tree::*;
+
+pub enum MessageError {
+    UnknownOperation,
+}
 
 pub const HANDSHAKE_WELCOME: u8 = 1;
 pub const HANDSHAKE_UPDATE: u8 = 2;
@@ -26,29 +32,29 @@ pub const HANDSHAKE_ADD: u8 = 3;
 pub const HANDSHAKE_REMOVE: u8 = 4;
 
 #[derive(Clone)]
-pub enum HandshakeMessage {
-    Welcome(Welcome),
+pub enum GroupOperationValue {
+    Welcome(Box<Welcome>),
     Update(Update),
     Add(Add),
     Remove(Remove),
 }
 
-impl Codec for HandshakeMessage {
+impl Codec for GroupOperationValue {
     fn encode(&self, buffer: &mut Vec<u8>) {
         match self {
-            HandshakeMessage::Welcome(welcome) => {
+            GroupOperationValue::Welcome(welcome) => {
                 HANDSHAKE_WELCOME.encode(buffer);
                 welcome.encode(buffer);
             }
-            HandshakeMessage::Update(update) => {
+            GroupOperationValue::Update(update) => {
                 HANDSHAKE_UPDATE.encode(buffer);
                 update.encode(buffer);
             }
-            HandshakeMessage::Add(add) => {
+            GroupOperationValue::Add(add) => {
                 HANDSHAKE_ADD.encode(buffer);
                 add.encode(buffer);
             }
-            HandshakeMessage::Remove(remove) => {
+            GroupOperationValue::Remove(remove) => {
                 HANDSHAKE_REMOVE.encode(buffer);
                 remove.encode(buffer);
             }
@@ -57,12 +63,108 @@ impl Codec for HandshakeMessage {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let handshake_type = cursor.take(1)?[0];
         match handshake_type {
-            HANDSHAKE_WELCOME => Ok(HandshakeMessage::Welcome(Welcome::decode(cursor)?)),
-            HANDSHAKE_UPDATE => Ok(HandshakeMessage::Update(Update::decode(cursor)?)),
-            HANDSHAKE_ADD => Ok(HandshakeMessage::Add(Add::decode(cursor)?)),
-            HANDSHAKE_REMOVE => Ok(HandshakeMessage::Remove(Remove::decode(cursor)?)),
+            HANDSHAKE_WELCOME => Ok(GroupOperationValue::Welcome(Box::new(Welcome::decode(
+                cursor,
+            )?))),
+            HANDSHAKE_UPDATE => Ok(GroupOperationValue::Update(Update::decode(cursor)?)),
+            HANDSHAKE_ADD => Ok(GroupOperationValue::Add(Add::decode(cursor)?)),
+            HANDSHAKE_REMOVE => Ok(GroupOperationValue::Remove(Remove::decode(cursor)?)),
             _ => Err(CodecError::DecodingError),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub enum GroupOperationType {
+    Init = 0,
+    Add = 1,
+    Update = 2,
+    Remove = 3,
+    Default = 255,
+}
+
+impl From<u8> for GroupOperationType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => GroupOperationType::Init,
+            1 => GroupOperationType::Add,
+            2 => GroupOperationType::Update,
+            3 => GroupOperationType::Remove,
+            _ => GroupOperationType::Default,
+        }
+    }
+}
+
+impl Codec for GroupOperationType {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        (*self as u8).encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        Ok(GroupOperationType::from(cursor.take(1)?[0]))
+    }
+}
+
+pub struct GroupOperation {
+    pub msg_type: GroupOperationType,
+    pub group_operation: GroupOperationValue,
+}
+
+impl Codec for GroupOperation {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.msg_type.encode(buffer);
+        self.group_operation.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let msg_type = GroupOperationType::decode(cursor)?;
+        let group_operation = GroupOperationValue::decode(cursor)?;
+        Ok(GroupOperation {
+            msg_type,
+            group_operation,
+        })
+    }
+}
+
+pub struct Handshake {
+    pub prior_epoch: GroupEpoch,
+    pub operation: GroupOperation,
+    pub signer_index: u32,
+    pub algorithm: SignatureScheme,
+    pub signature: Option<Signature>,
+}
+
+impl Signable for Handshake {
+    fn unsigned_payload(&self) -> Vec<u8> {
+        let buffer = &mut Vec::new();
+        self.prior_epoch.encode(buffer);
+        self.operation.encode(buffer);
+        self.signer_index.encode(buffer);
+        self.algorithm.encode(buffer);
+        buffer.to_vec()
+    }
+}
+
+impl Codec for Handshake {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.prior_epoch.encode(buffer);
+        self.operation.encode(buffer);
+        self.signer_index.encode(buffer);
+        self.algorithm.encode(buffer);
+        self.signature.unwrap().encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let prior_epoch = GroupEpoch::decode(cursor)?;
+        let operation = GroupOperation::decode(cursor)?;
+        let signer_index = u32::decode(cursor)?;
+        let algorithm = SignatureScheme::decode(cursor)?;
+        let signature = Some(Signature::decode(cursor)?);
+        Ok(Handshake {
+            prior_epoch,
+            operation,
+            signer_index,
+            algorithm,
+            signature,
+        })
     }
 }
 
@@ -72,8 +174,8 @@ pub struct Welcome {
     pub epoch: GroupEpoch,
     pub roster: Vec<BasicCredential>,
     pub tree: Vec<X25519PublicKey>,
-    pub transcript: Vec<HandshakeMessage>,
-    pub init_secret: GroupSecret,
+    pub transcript: Vec<GroupOperationValue>,
+    pub init_secret: InitSecret,
     pub leaf_secret: NodeSecret,
 }
 
@@ -93,7 +195,7 @@ impl Codec for Welcome {
         let roster = decode_vec_u16(cursor)?;
         let tree = decode_vec_u16(cursor)?;
         let transcript = decode_vec_u16(cursor)?;
-        let init_secret = GroupSecret::decode(cursor)?;
+        let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
         Ok(Welcome {
             group_id,

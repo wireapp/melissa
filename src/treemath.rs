@@ -136,23 +136,7 @@ pub fn leaves(n: usize) -> Vec<usize> {
     Range { start: 0, end: n }.map(|x| 2 * x).collect()
 }
 
-pub fn bytes_to_hex(bytes: &[u8]) -> String {
-    let mut hex = String::new();
-    for b in bytes {
-        hex += &format!("{:02X}", *b);
-    }
-    hex
-}
-
-pub fn hex_to_bytes(hex: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for i in 0..(hex.len() / 2) {
-        let b = u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap();
-        bytes.push(b);
-    }
-    bytes
-}
-
+#[derive(Clone, Copy)]
 pub enum FunctionType {
     OneArg(fn(usize) -> usize),
     TwoArgs(fn(usize, usize) -> usize),
@@ -164,7 +148,7 @@ pub enum ReturnType {
     Vector(Vec<Vec<usize>>),
 }
 
-pub fn gen_vector(range_start: usize, range_end: usize, size: usize, fs: FunctionType) -> Vec<u8> {
+pub fn gen_vector(range_start: usize, range_end: usize, size: usize, ft: FunctionType) -> Vec<u8> {
     let range = Range {
         start: range_start,
         end: range_end,
@@ -172,7 +156,7 @@ pub fn gen_vector(range_start: usize, range_end: usize, size: usize, fs: Functio
     let mut test_vector: Vec<u8> = Vec::new();
     let mut test_vector_2d: Vec<Vec<u8>> = Vec::new();
     for i in range {
-        match fs {
+        match ft {
             FunctionType::OneArg(f) => {
                 test_vector.push(f(i) as u8);
             }
@@ -194,12 +178,12 @@ pub fn gen_vector(range_start: usize, range_end: usize, size: usize, fs: Functio
     let num_elements = range_end - range_start + 1;
     (num_elements as u8).encode(&mut buffer);
 
-    match fs {
+    match ft {
         FunctionType::OneArg(_) => {
-            encode_vec_u8(&mut buffer, &mut test_vector);
+            encode_vec_u8(&mut buffer, &test_vector);
         }
         FunctionType::TwoArgs(_) => {
-            encode_vec_u8(&mut buffer, &mut test_vector);
+            encode_vec_u8(&mut buffer, &test_vector);
         }
         FunctionType::TwoArgsPath(_) => {
             for e in test_vector_2d.iter_mut() {
@@ -211,12 +195,12 @@ pub fn gen_vector(range_start: usize, range_end: usize, size: usize, fs: Functio
     buffer
 }
 
-pub fn read_vector(rt: ReturnType, buffer: &[u8]) -> ReturnType {
+pub fn read_vector(rt: &ReturnType, buffer: &[u8]) -> ReturnType {
     let mut vector = Vec::new();
     let mut vector2d = Vec::new();
     let mut cursor = Cursor::new(buffer);
 
-    match rt {
+    match *rt {
         ReturnType::Primitive(_) => {
             let vector_usize: Vec<u8> = decode_vec_u8(&mut cursor).unwrap();
             vector_usize.iter().for_each(|&x| vector.push(x as usize));
@@ -239,6 +223,8 @@ pub fn read_vector(rt: ReturnType, buffer: &[u8]) -> ReturnType {
 
 #[test]
 fn print_test_vectors() {
+    use utils::*;
+
     let size = 255;
     println!(
         "Test vector for root() with size {}:\n{}",
@@ -319,6 +305,8 @@ fn print_test_vectors() {
 
 #[test]
 fn compare_test_vectors() {
+    use utils::*;
+
     fn test_vector(
         test_vector_hex: &str,
         range_start: usize,

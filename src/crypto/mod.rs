@@ -14,15 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
-extern crate libsodium_sys;
-extern crate ring;
-extern crate sodiumoxide;
-
-pub mod codec;
-pub mod crypto;
-pub mod group;
-pub mod keys;
-pub mod messages;
-pub mod tree;
-pub mod treemath;
-pub mod utils;
+pub mod aesgcm;
+pub mod eckem;
+pub mod hkdf;
+pub mod schedule;
