@@ -19,7 +19,6 @@ use crypto::aesgcm;
 use crypto::hkdf;
 use keys::*;
 use sodiumoxide::crypto::aead;
-use sodiumoxide::crypto::auth::hmacsha256::Tag;
 use std::*;
 
 pub type EcKemError = aesgcm::AesError;
@@ -49,19 +48,13 @@ impl Codec for X25519AESCiphertext {
 pub fn derive_ecies_secrets(shared_secret: &[u8]) -> (aesgcm::Aes128Key, aesgcm::Nonce) {
     let mut key_label_str = b"mls10 ecies key".to_vec();
     key_label_str.push(0x01);
-    let key_hkdf = hkdf::expand(
-        Tag::from_slice(&shared_secret).unwrap(),
-        hkdf::Info(&key_label_str),
-        aesgcm::AES128KEYBYTES,
-    );
+    let prk = hkdf::Prk::from_slice(&shared_secret).unwrap();
+    let key_hkdf = hkdf::expand(prk, hkdf::Info(&key_label_str), aesgcm::AES128KEYBYTES);
     let ecies_key: aesgcm::Aes128Key = aesgcm::Aes128Key::from_slice(&key_hkdf);
     let mut nonce_label_str = b"mls10 ecies nonce".to_vec();
     nonce_label_str.push(0x01);
-    let nonce_hkdf = hkdf::expand(
-        Tag::from_slice(&shared_secret).unwrap(),
-        hkdf::Info(&nonce_label_str),
-        aesgcm::NONCEBYTES,
-    );
+    let prk = hkdf::Prk::from_slice(&shared_secret).unwrap();
+    let nonce_hkdf = hkdf::expand(prk, hkdf::Info(&nonce_label_str), aesgcm::NONCEBYTES);
     let ecies_nonce: aesgcm::Nonce = aesgcm::Nonce::from_slice(&nonce_hkdf);
     (ecies_key, ecies_nonce)
 }

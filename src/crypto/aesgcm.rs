@@ -18,8 +18,9 @@ use libsodium_sys::{
     crypto_aead_aes256gcm_decrypt_detached, crypto_aead_aes256gcm_encrypt_detached,
 };
 use ring::aead as ring_aead;
-use sodiumoxide::{randombytes, utils};
+use sodiumoxide::randombytes;
 use std::*;
+use utils::*;
 
 pub enum ALGORITHM {
     AES128GCM,
@@ -74,7 +75,7 @@ impl From<Vec<u8>> for Aes128Key {
 
 impl Drop for Aes128Key {
     fn drop(&mut self) {
-        utils::memzero(&mut self.0)
+        erase(&mut self.0)
     }
 }
 
@@ -97,7 +98,7 @@ impl From<Vec<u8>> for Aes256Key {
 
 impl Drop for Aes256Key {
     fn drop(&mut self) {
-        utils::memzero(&mut self.0)
+        erase(&mut self.0)
     }
 }
 

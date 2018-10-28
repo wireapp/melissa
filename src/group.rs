@@ -15,9 +15,10 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
+use crypto::schedule::*;
 use keys::*;
 use messages::*;
-use sodiumoxide::{randombytes, utils};
+use sodiumoxide::randombytes;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::*;
 use tree::*;
@@ -53,33 +54,6 @@ impl Codec for GroupId {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Default, Debug)]
-pub struct GroupSecret(pub [u8; GROUPSECRETBYTES]);
-
-impl GroupSecret {
-    pub fn from_bytes(bytes: &[u8]) -> Self {
-        let mut group_secret = GroupSecret::default();
-        group_secret.0.clone_from_slice(bytes);
-        group_secret
-    }
-}
-
-impl Codec for GroupSecret {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
-    }
-    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let bytes = decode_vec_u8(cursor)?;
-        Ok(GroupSecret::from_bytes(&bytes))
-    }
-}
-
-impl Drop for GroupSecret {
-    fn drop(&mut self) {
-        utils::memzero(&mut self.0)
-    }
-}
-
 pub type GroupEpoch = u32;
 
 #[derive(Clone)]
@@ -87,7 +61,8 @@ pub struct Group {
     id: Identity,
     group_id: GroupId,
     group_epoch: GroupEpoch,
-    group_secret: GroupSecret,
+    init_secret: InitSecret,
+    epoch_secrets: Option<EpochSecrets>,
     roster: Vec<BasicCredential>,
     tree: Tree,
     update_secret: Option<(u64, NodeSecret)>,
@@ -98,13 +73,14 @@ impl Group {
     pub fn new(id: Identity, credential: BasicCredential, group_id: GroupId) -> Self {
         let secret = NodeSecret::new_random();
         let own_leaf = Node::from_secret(&secret);
-        let group_secret = GroupSecret::from_bytes(&secret.0[..]);
+        let init_secret = InitSecret::from_bytes(&[0u8; 32]);
         let tree = Tree::new_from_leaf(&own_leaf);
         Group {
             id,
             group_id,
             group_epoch: 0,
-            group_secret, // FIXME
+            init_secret,
+            epoch_secrets: None,
             roster: vec![credential],
             tree,
             update_secret: None,
@@ -123,11 +99,12 @@ impl Group {
             id,
             group_id: welcome.group_id.clone(),
             group_epoch: welcome.epoch,
-            group_secret: welcome.init_secret.clone(),
-            roster: welcome.roster.clone(),
+            init_secret: welcome.init_secret.clone(),
+            epoch_secrets: None,
+            roster,
             tree,
             update_secret: None,
-            transcript: vec![],
+            transcript: welcome.transcript.clone(),
         }
     }
     pub fn create_add(&mut self, id: BasicCredential, init_key: &UserInitKey) -> (Welcome, Add) {
@@ -153,32 +130,31 @@ impl Group {
         welcome_roster.push(id);
 
         let welcome = Welcome {
-            group_id: self.group_id.clone(),
-            epoch: self.group_epoch,
-            roster: welcome_roster,
+            group_id: welcome_group.group_id.clone(),
+            epoch: welcome_group.group_epoch,
+            roster: welcome_group.roster.clone(),
             tree: welcome_group.tree.get_public_key_tree(),
-            transcript: Vec::new(), // FIXME
-            init_secret: welcome_group.get_group_secret(),
+            transcript: welcome_group.transcript.clone(),
+            init_secret: welcome_group.get_init_secret(),
             leaf_secret,
         };
-        // FIXME sign the Add message
         (welcome, add)
     }
     pub fn process_add(&mut self, add: &Add) {
-        // FIXME verify init key signature
+        assert!(add.init_key.self_verify());
         let size = self.tree.get_leaf_count() + 1;
         let index = self.tree.get_leaf_count() * 2;
         let kem_path = treemath::copath(index, size);
         assert_eq!(kem_path.len(), add.path.len());
         self.tree
             .apply_kem_path(index, size, &kem_path, &add.path, &add.nodes);
-        self.rotate_group_secret();
         let bc = BasicCredential {
             identity: vec![],
             public_key: add.init_key.identity_key,
         };
         self.roster.push(bc);
         self.transcript.push(GroupOperationValue::Add(add.clone()));
+        self.rotate_epoch_secret();
     }
     pub fn create_update(&mut self) -> Update {
         let own_leaf_index = self.tree.get_own_leaf_index();
@@ -189,18 +165,15 @@ impl Group {
             nodes,
             path: ciphertexts,
         };
-        // FIXME should be derived from roster
         let mut hasher = DefaultHasher::new();
         update.hash(&mut hasher);
         let hash = hasher.finish();
         self.update_secret = Some((hash, leaf_secret));
-        // FIXME sign the Update message
         update
     }
-    pub fn process_update(&mut self, participant: usize, update: &Update) {
+    pub fn process_update(&mut self, sender: usize, update: &Update) {
         let size = self.tree.get_leaf_count();
-        let index = participant * 2;
-        // FIXME check if participant number matches the sender in the roster
+        let index = sender * 2;
         let kem_path = treemath::copath(index, size);
         if let Some((stored_hash, node_secret)) = self.update_secret {
             let mut hasher = DefaultHasher::new();
@@ -222,7 +195,7 @@ impl Group {
         self.update_secret = None;
         self.transcript
             .push(GroupOperationValue::Update(update.clone()));
-        self.rotate_group_secret();
+        self.rotate_epoch_secret();
     }
     pub fn create_remove(&self, participant: usize) -> Remove {
         assert!(participant <= self.tree.get_leaf_count());
@@ -231,7 +204,6 @@ impl Group {
         let size = self.tree.get_leaf_count();
         let leaf_secret = NodeSecret::new_random();
         let (nodes, ciphertexts) = self.tree.encrypt(index, size, leaf_secret);
-        // FIXME sign the Remove message
         Remove {
             removed: participant,
             nodes,
@@ -245,9 +217,9 @@ impl Group {
         assert_eq!(kem_path.len(), remove.path.len());
         self.tree
             .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
-        self.rotate_group_secret();
         self.transcript
             .push(GroupOperationValue::Remove(remove.clone()));
+        self.rotate_epoch_secret();
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
         let signer_index = self.tree.get_own_leaf_index() as u32;
@@ -284,16 +256,18 @@ impl Group {
     pub fn get_members(&self) -> Vec<BasicCredential> {
         self.roster.clone()
     }
-    pub fn get_group_secret(&self) -> GroupSecret {
-        self.group_secret.clone()
+    pub fn get_init_secret(&self) -> InitSecret {
+        self.init_secret.clone()
     }
-    pub fn rotate_group_secret(&mut self) {
+    fn rotate_epoch_secret(&mut self) {
         let root = self.tree.get_root();
-        // FIXME: KDF is not yet applied
-        self.group_secret = GroupSecret(root.secret.unwrap().0);
+        let update_secret = &root.secret.unwrap().0;
+        let mut group_state = Vec::new();
+        self.encode_group_state(&mut group_state);
+        self.epoch_secrets = Some(self.init_secret.update(update_secret, &group_state));
         self.group_epoch += 1;
     }
-    pub fn encode_group_state(&self, buffer: &mut Vec<u8>) {
+    fn encode_group_state(&self, buffer: &mut Vec<u8>) {
         self.group_id.encode(buffer);
         self.group_epoch.encode(buffer);
         encode_vec_u16(buffer, &self.roster);
@@ -337,13 +311,13 @@ fn alice_bob_charlie_walk_into_a_group() {
     group_alice.process_add(&add_alice_bob);
 
     let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
-    assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
+    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
 
     // Bob updates
     let update_bob = group_bob.create_update();
     group_bob.process_update(1, &update_bob);
     group_alice.process_update(1, &update_bob);
-    assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
+    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
 
     // Alice updates
     let update_alice = group_alice.create_update();
@@ -357,16 +331,13 @@ fn alice_bob_charlie_walk_into_a_group() {
 
     group_alice.process_add(&add_bob_charlie);
     assert_eq!(
-        group_alice.get_group_secret(),
-        group_charlie.get_group_secret()
+        group_alice.get_init_secret(),
+        group_charlie.get_init_secret()
     );
 
     group_bob.process_add(&add_bob_charlie);
-    assert_eq!(
-        group_bob.get_group_secret(),
-        group_charlie.get_group_secret()
-    );
-    assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
+    assert_eq!(group_bob.get_init_secret(), group_charlie.get_init_secret());
+    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
 
     // Charlie updates
     let update_charlie = group_charlie.create_update();
@@ -379,10 +350,10 @@ fn alice_bob_charlie_walk_into_a_group() {
     group_alice.process_update(0, &update_alice);
     group_bob.process_update(0, &update_alice);
     group_charlie.process_update(0, &update_alice);
-    assert_eq!(group_alice.get_group_secret(), group_bob.get_group_secret());
+    assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
     assert_eq!(
-        group_alice.get_group_secret(),
-        group_charlie.get_group_secret()
+        group_alice.get_init_secret(),
+        group_charlie.get_init_secret()
     );
 
     // Charlie removes Bob
@@ -391,9 +362,9 @@ fn alice_bob_charlie_walk_into_a_group() {
     group_charlie.process_remove(&remove_charlie_bob);
 
     assert_eq!(
-        group_alice.get_group_secret(),
-        group_charlie.get_group_secret()
+        group_alice.get_init_secret(),
+        group_charlie.get_init_secret()
     );
 
-    assert_ne!(group_alice.get_group_secret(), group_bob.get_group_secret());
+    assert_ne!(group_alice.get_init_secret(), group_bob.get_init_secret());
 }

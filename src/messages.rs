@@ -15,7 +15,8 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
-use crypto::eckem::*;
+use crypto::eckem::X25519AESCiphertext;
+use crypto::schedule::InitSecret;
 use group::*;
 use keys::*;
 use std::convert::From;
@@ -174,7 +175,7 @@ pub struct Welcome {
     pub roster: Vec<BasicCredential>,
     pub tree: Vec<X25519PublicKey>,
     pub transcript: Vec<GroupOperationValue>,
-    pub init_secret: GroupSecret,
+    pub init_secret: InitSecret,
     pub leaf_secret: NodeSecret,
 }
 
@@ -194,7 +195,7 @@ impl Codec for Welcome {
         let roster = decode_vec_u16(cursor)?;
         let tree = decode_vec_u16(cursor)?;
         let transcript = decode_vec_u16(cursor)?;
-        let init_secret = GroupSecret::decode(cursor)?;
+        let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
         Ok(Welcome {
             group_id,

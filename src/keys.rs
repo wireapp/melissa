@@ -18,8 +18,8 @@ use codec::*;
 use sodiumoxide::crypto::scalarmult;
 use sodiumoxide::crypto::sign::ed25519;
 use sodiumoxide::randombytes;
-use sodiumoxide::utils;
 use tree::*;
+use utils::*;
 
 pub const PUBLICKEYBYTES: usize = 32;
 pub const PRIVATEKEYBYTES: usize = 32;
@@ -68,7 +68,7 @@ impl X25519PrivateKey {
 
 impl Drop for X25519PrivateKey {
     fn drop(&mut self) {
-        utils::memzero(&mut self.0)
+        erase(&mut self.0)
     }
 }
 
@@ -101,10 +101,6 @@ impl X25519KeyPair {
         }
     }
 }
-
-pub const INITSECRETBYTES: usize = 32;
-
-pub struct InitSecret(pub [u8; INITSECRETBYTES]);
 
 #[derive(PartialEq, Clone)]
 pub struct LeafKey {
@@ -171,9 +167,9 @@ impl Identity {
 
 impl Drop for Identity {
     fn drop(&mut self) {
-        utils::memzero(&mut self.private_key.0);
-        utils::memzero(&mut self.public_key.0);
-        utils::memzero(&mut self.id);
+        erase(&mut self.private_key.0);
+        erase(&mut self.public_key.0);
+        erase(&mut self.id);
     }
 }
 
@@ -248,12 +244,6 @@ impl UserInitKey {
         init_key.signature = identity.sign(&init_key.unsigned_payload());
         init_key
     }
-    /*
-    pub fn random() -> Self {
-        let (public_key, private_key) = ed25519::gen_keypair();
-        UserInitKey::new(vec![], private_key, public_key)
-    }
-    */
     pub fn self_verify(&self) -> bool {
         ed25519::verify_detached(
             &self.signature,
@@ -301,7 +291,7 @@ impl Codec for UserInitKey {
 
 pub struct UserInitKeyBundle {
     pub init_key: UserInitKey,
-    private_keys: Vec<X25519PrivateKey>,
+    _private_keys: Vec<X25519PrivateKey>,
 }
 
 impl UserInitKeyBundle {
@@ -316,7 +306,7 @@ impl UserInitKeyBundle {
         let init_key = UserInitKey::new(&public_keys, identity);
         UserInitKeyBundle {
             init_key,
-            private_keys,
+            _private_keys: private_keys,
         }
     }
 }

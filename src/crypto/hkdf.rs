@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
+use sodiumoxide::crypto::auth::hmacsha256; //::{self, authenticate, Tag}
 use sodiumoxide::crypto::auth::hmacsha256::KEYBYTES;
-use sodiumoxide::crypto::auth::hmacsha256::{self, authenticate, Tag};
 use sodiumoxide::crypto::hash::sha256::{hash, Digest};
-use sodiumoxide::utils;
 use std::io::Write;
 use std::vec::Vec;
+use utils::*;
 
 pub const HASH_LEN: usize = 32;
 
@@ -33,7 +33,22 @@ pub struct Key(pub Vec<u8>);
 
 impl Drop for Key {
     fn drop(&mut self) {
-        utils::memzero(&mut self.0)
+        erase(&mut self.0)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Prk(pub [u8; 32]);
+
+impl Prk {
+    pub fn from_slice(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() == 32 {
+            let mut inner = [0u8; 32];
+            inner.copy_from_slice(&bytes[..32]);
+            Some(Prk(inner))
+        } else {
+            None
+        }
     }
 }
 
@@ -55,8 +70,8 @@ pub fn hkdf(salt: Salt, input: Input, info: Info, Len(len): Len) -> Key {
 }
 
 // Step1: HKDF-Extract(salt, IKM) -> PRK
-pub fn extract(Salt(s): Salt, Input(i): Input) -> Tag {
-    authenticate(i, &hmacsha256::Key(mk_salt(s)))
+pub fn extract(Salt(s): Salt, Input(i): Input) -> Prk {
+    Prk(hmacsha256::authenticate(i, &hmacsha256::Key(mk_salt(s))).0)
 }
 
 // The salt is used as key for HMAC-Hash. It is either padded to the right
@@ -74,7 +89,7 @@ fn mk_salt(input: &[u8]) -> [u8; KEYBYTES] {
 }
 
 // Step2: HKDF-Expand(PRK, info, L) -> OKM
-pub fn expand(Tag(prk): Tag, Info(info): Info, len: usize) -> Vec<u8> {
+pub fn expand(prk: Prk, Info(info): Info, len: usize) -> Vec<u8> {
     let n = (len as f32 / HASH_LEN as f32).ceil() as usize;
     let mut t = Vec::new();
     let mut okm = Vec::new();
@@ -85,7 +100,8 @@ pub fn expand(Tag(prk): Tag, Info(info): Info, len: usize) -> Vec<u8> {
         buf.extend(info);
         buf.push(i as u8);
 
-        let t_i = authenticate(&buf, &hmacsha256::Key(prk));
+        let key = hmacsha256::Key::from_slice(&prk.0).unwrap();
+        let t_i = hmacsha256::authenticate(&buf, &key);
         okm.extend(&t_i.0);
 
         t.clear();
