@@ -148,8 +148,8 @@ impl Node {
 
 #[derive(Clone)]
 pub struct Tree {
-    nodes: Vec<Node>,
-    own_leaf_index: usize,
+    pub nodes: Vec<Node>,
+    pub own_leaf_index: usize,
 }
 
 impl Tree {
