@@ -85,16 +85,27 @@ pub fn parent_step(x: usize) -> usize {
 }
 
 pub fn parent(x: usize, n: usize) -> usize {
-    assert_in_range(x, n);
-
     if x == root(n) {
         return x;
     }
-    let mut p = parent_step(x);
-    while p >= node_width(n) {
-        p = parent_step(p);
+
+    let l0 = level(x);
+    let l1 = level(x) + 1;
+    let distance = pow2(l1);
+    let left_offset = pow2(l0) - 1;
+
+    let parity = (x - left_offset) / distance;
+    let p = if parity & 0x01 == 1 {
+        x - (distance / 2)
+    } else {
+        x + (distance / 2)
+    };
+
+    if p > (2 * (n - 1)) {
+        parent(p, n)
+    } else {
+        p
     }
-    p
 }
 
 pub fn sibling(x: usize, n: usize) -> usize {
