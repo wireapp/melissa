@@ -81,7 +81,6 @@ pub struct Node {
 
 impl Node {
     pub fn from_secret(secret: &NodeSecret) -> Node {
-        // FIXME keypair should only be computed on demand
         let kp = X25519KeyPair::new_from_secret(&secret);
         Node {
             secret: Some(*secret),
@@ -134,6 +133,16 @@ impl Node {
                 None => None,
             },
         }
+    }
+
+    pub fn blank(&mut self) {
+        self.secret = None;
+        self.dh_private_key = None;
+        self.dh_public_key = None;
+    }
+
+    pub fn is_blank(&self) -> bool {
+        self.secret.is_none() && self.dh_private_key.is_none() && self.dh_public_key.is_none()
     }
 }
 
@@ -221,6 +230,30 @@ impl Tree {
 
     pub fn get_leaf_count(&self) -> usize {
         self.get_tree_size() / 2 + 1
+    }
+
+    pub fn resolve(&self, x: usize) -> Vec<usize> {
+        let n = self.get_leaf_count();
+        if !self.nodes[x].is_blank() {
+            return vec![x];
+        }
+
+        if treemath::level(x) == 0 {
+            return vec![];
+        }
+
+        let mut left = self.resolve(treemath::left(x));
+        let right = self.resolve(treemath::right(x, n));
+        left.extend(right);
+        left
+    }
+
+    pub fn blank_up(&mut self, x: usize) {
+        let n = self.get_leaf_count();
+        self.nodes[x].blank();
+        if x != treemath::root(n) {
+            self.blank_up(treemath::parent(x, n));
+        }
     }
 
     pub fn merge(&mut self, path: Vec<usize>, nodes: &[Node]) {
