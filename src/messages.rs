@@ -74,7 +74,7 @@ impl Codec for GroupOperationValue {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum GroupOperationType {
     Init = 0,
