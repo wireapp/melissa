@@ -16,7 +16,7 @@
 
 use std::convert::*;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CodecError {
     EncodingError,
     DecodingError,

@@ -308,6 +308,10 @@ fn alice_bob_charlie_walk_into_a_group() {
 
     // Alice adds Bob
     let (welcome_alice_bob, add_alice_bob) = group_alice.create_add(bob_credential, &bob_init_key);
+    assert_eq!(
+        Codec::decode_detached(welcome_alice_bob.encode_detached().as_slice()).map(|_: Welcome| ()),
+        Ok(())
+    );
     group_alice.process_add(&add_alice_bob);
 
     let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
