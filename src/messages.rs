@@ -105,6 +105,7 @@ impl Codec for GroupOperationType {
     }
 }
 
+#[derive(Clone)]
 pub struct GroupOperation {
     pub msg_type: GroupOperationType,
     pub group_operation: GroupOperationValue,
