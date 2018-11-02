@@ -126,6 +126,7 @@ impl Codec for GroupOperation {
     }
 }
 
+#[derive(Clone)]
 pub struct Handshake {
     pub prior_epoch: GroupEpoch,
     pub operation: GroupOperation,
