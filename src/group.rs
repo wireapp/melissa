@@ -222,7 +222,7 @@ impl Group {
         self.rotate_epoch_secret();
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
-        let signer_index = self.tree.get_own_leaf_index() as u32;
+        let signer_index = self.tree.get_own_leaf_index() as u32 / 2;
         let prior_epoch = self.group_epoch;
         let algorithm = ED25519;
         let mut hs = Handshake {
