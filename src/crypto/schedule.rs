@@ -74,6 +74,23 @@ pub struct EpochSecrets {
     pub confirmation_key: [u8; 32],
 }
 
+impl Codec for EpochSecrets {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.app_secret);
+        encode_vec_u8(buffer, &self.confirmation_key);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let mut app_secret = <[u8; 32]>::default();
+        let mut confirmation_key = <[u8; 32]>::default();
+        app_secret.clone_from_slice(&decode_vec_u8(cursor)?);
+        confirmation_key.clone_from_slice(&decode_vec_u8(cursor)?);
+        Ok(EpochSecrets {
+            app_secret,
+            confirmation_key,
+        })
+    }
+}
+
 impl EpochSecrets {
     pub fn new(app_secret_bytes: &[u8], confirmation_key_bytes: &[u8]) -> Self {
         let mut app_secret = [0u8; 32];

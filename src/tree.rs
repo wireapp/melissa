@@ -79,6 +79,24 @@ pub struct Node {
     pub dh_private_key: Option<X25519PrivateKey>,
 }
 
+impl Codec for Node {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.secret.encode(buffer);
+        self.dh_public_key.encode(buffer);
+        self.dh_private_key.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let secret = Option::<NodeSecret>::decode(cursor)?;
+        let dh_public_key = Option::<X25519PublicKey>::decode(cursor)?;
+        let dh_private_key = Option::<X25519PrivateKey>::decode(cursor)?;
+        Ok(Node {
+            secret,
+            dh_public_key,
+            dh_private_key,
+        })
+    }
+}
+
 impl Node {
     pub fn from_secret(secret: &NodeSecret) -> Node {
         // FIXME keypair should only be computed on demand
@@ -141,6 +159,21 @@ impl Node {
 pub struct Tree {
     nodes: Vec<Node>,
     own_leaf_index: usize,
+}
+
+impl Codec for Tree {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u32(buffer, &self.nodes);
+        (self.own_leaf_index as u32).encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let nodes = decode_vec_u32(cursor)?;
+        let own_leaf_index = u32::decode(cursor)? as usize;
+        Ok(Tree {
+            nodes,
+            own_leaf_index,
+        })
+    }
 }
 
 impl Tree {

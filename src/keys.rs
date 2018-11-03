@@ -44,6 +44,17 @@ impl Codec for X25519PublicKey {
 #[derive(PartialEq, Clone, Debug)]
 pub struct X25519PrivateKey([u8; PRIVATEKEYBYTES]);
 
+impl Codec for X25519PrivateKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let mut value = [0u8; PRIVATEKEYBYTES];
+        value.clone_from_slice(&decode_vec_u8(cursor)?[..PRIVATEKEYBYTES]);
+        Ok(X25519PrivateKey(value))
+    }
+}
+
 pub const X25519PRIVATEKEYBYTES: usize = scalarmult::SCALARBYTES;
 
 impl X25519PrivateKey {
@@ -123,6 +134,16 @@ impl Codec for SignaturePublicKey {
 
 pub type SignaturePrivateKey = ed25519::SecretKey;
 
+impl Codec for SignaturePrivateKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let bytes = decode_vec_u8(cursor)?;
+        Ok(SignaturePrivateKey::from_slice(&bytes).unwrap())
+    }
+}
+
 pub type Signature = ed25519::Signature;
 
 impl Codec for Signature {
@@ -144,6 +165,24 @@ pub struct Identity {
     pub id: Vec<u8>,
     pub public_key: SignaturePublicKey,
     private_key: SignaturePrivateKey,
+}
+
+impl Codec for Identity {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.id);
+        self.public_key.encode(buffer);
+        self.private_key.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let id = decode_vec_u8(cursor)?;
+        let public_key = SignaturePublicKey::decode(cursor)?;
+        let private_key = SignaturePrivateKey::decode(cursor)?;
+        Ok(Identity {
+            id,
+            public_key,
+            private_key,
+        })
+    }
 }
 
 impl Identity {
@@ -308,6 +347,22 @@ impl UserInitKeyBundle {
             init_key,
             _private_keys: private_keys,
         }
+    }
+}
+
+impl Codec for UserInitKeyBundle {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.init_key.encode(buffer);
+        encode_vec_u16(buffer, &self._private_keys);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let init_key: UserInitKey = UserInitKey::decode(cursor)?;
+        let _private_keys: Vec<X25519PrivateKey> = decode_vec_u16(cursor)?;
+        Ok(UserInitKeyBundle {
+            init_key,
+            _private_keys,
+        })
     }
 }
 
