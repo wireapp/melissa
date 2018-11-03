@@ -142,6 +142,30 @@ impl Codec for u32 {
     }
 }
 
+impl<T: Codec> Codec for Option<T> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        match self {
+            None => buffer.push(0),
+            Some(value) => {
+                buffer.push(1);
+                value.encode(buffer);
+            }
+        }
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let tag = u8::decode(cursor)?;
+        match tag {
+            0 => Ok(None),
+            1 => match T::decode(cursor) {
+                Ok(value) => Ok(Some(value)),
+                Err(e) => Err(e),
+            },
+            _ => Err(CodecError::DecodingError),
+        }
+    }
+}
+
 pub fn encode_vec_u8<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
     let mut sub_cursor: Vec<u8> = Vec::new();
     slice.iter().for_each(|e| e.encode(&mut sub_cursor));
