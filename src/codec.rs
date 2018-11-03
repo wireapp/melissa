@@ -142,6 +142,17 @@ impl Codec for u32 {
     }
 }
 
+impl Codec for u64 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        ((*self >> 32) as u32, *self as u32).encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let (hi, lo) = <(u32, u32)>::decode(cursor)?;
+        Ok(((hi as u64) << 32) | (lo as u64))
+    }
+}
+
 impl<T: Codec> Codec for Option<T> {
     fn encode(&self, buffer: &mut Vec<u8>) {
         match self {
@@ -163,6 +174,17 @@ impl<T: Codec> Codec for Option<T> {
             },
             _ => Err(CodecError::DecodingError),
         }
+    }
+}
+
+impl<T1: Codec, T2: Codec> Codec for (T1, T2) {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0.encode(buffer);
+        self.1.encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        Ok((T1::decode(cursor)?, T2::decode(cursor)?))
     }
 }
 
