@@ -163,3 +163,36 @@ fn encrypt_decrypt_x25519_chacha20_random() {
         assert_eq!(cleartext, decrypted);
     }
 }
+
+#[test]
+fn generate_ecies_secrets() {
+    use utils::*;
+
+    let shared_secret = sodiumoxide::randombytes::randombytes(32);
+
+    let (key, nonce) = derive_ecies_secrets(&shared_secret);
+
+    println!("Shared secret: {}", bytes_to_hex(&shared_secret));
+    println!("Key: {}", bytes_to_hex(&key.0));
+    println!("Nonce: {}", bytes_to_hex(&nonce.0));
+}
+
+#[test]
+fn test_ecies_secrets() {
+    use utils::*;
+
+    let shared_secret_hex = "626409A3109BC704CA0B39BBC7F9CB3748904509E5A4564B66B2A10B315BC6D5";
+    let shared_secret = hex_to_bytes(&shared_secret_hex);
+
+    let key_hex = "2BF6DE51B5C8CD8E45EA63B4B4D997DF";
+    let mut key_inner = <[u8; 16]>::default();
+    key_inner.copy_from_slice(&hex_to_bytes(&key_hex)[..16]);
+    let key = aesgcm::Aes128Key(key_inner);
+
+    let nonce_hex = "E66BE7FD5C91BB999D7903D9";
+    let mut nonce_inner = <[u8; 12]>::default();
+    nonce_inner.copy_from_slice(&hex_to_bytes(&nonce_hex)[..12]);
+    let nonce = aesgcm::Nonce(nonce_inner);
+
+    assert_eq!(derive_ecies_secrets(&shared_secret), (key, nonce));
+}

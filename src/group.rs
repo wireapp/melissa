@@ -297,10 +297,10 @@ fn alice_bob_charlie_walk_into_a_group() {
     };
 
     // Generate UserInitKeys
-    let bob_init_key_bundle = UserInitKeyBundle::new(1, &bob_identity);
+    let bob_init_key_bundle = UserInitKeyBundle::new(&bob_identity);
     let bob_init_key = bob_init_key_bundle.init_key.clone();
 
-    let charlie_init_key_bundle = UserInitKeyBundle::new(1, &charlie_identity);
+    let charlie_init_key_bundle = UserInitKeyBundle::new(&charlie_identity);
     let charlie_init_key = charlie_init_key_bundle.init_key.clone();
 
     // Create a group with Alice

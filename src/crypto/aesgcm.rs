@@ -38,6 +38,7 @@ pub const AES128KEYBYTES: usize = 16;
 pub const AES256KEYBYTES: usize = 32;
 pub const TAGBYTES: usize = 16;
 
+#[derive(PartialEq, Debug)]
 pub struct Nonce(pub [u8; NONCEBYTES]);
 
 impl Nonce {
@@ -56,6 +57,7 @@ impl Nonce {
     }
 }
 
+#[derive(PartialEq, Debug)]
 pub struct Aes128Key(pub [u8; AES128KEYBYTES]);
 
 impl Aes128Key {

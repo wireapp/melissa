@@ -131,7 +131,7 @@ impl Codec for u32 {
     }
 
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let bytes_option = cursor.take(2);
+        let bytes_option = cursor.take(4);
         match bytes_option {
             Ok(bytes) => Ok((u32::from(bytes[0]) << 24)
                 | (u32::from(bytes[1]) << 16)
