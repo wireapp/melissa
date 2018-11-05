@@ -29,8 +29,7 @@ pub struct NodeSecret(pub [u8; NODESECRETBYTES]);
 impl NodeSecret {
     pub fn new_random() -> Self {
         let mut bytes = [0u8; NODESECRETBYTES];
-        bytes[..NODESECRETBYTES]
-            .clone_from_slice(randombytes::randombytes(NODESECRETBYTES).as_slice());
+        bytes.clone_from_slice(randombytes::randombytes(NODESECRETBYTES).as_slice());
         NodeSecret(bytes)
     }
 
@@ -41,7 +40,7 @@ impl NodeSecret {
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut buffer = [0u8; NODESECRETBYTES];
-        buffer[..NODESECRETBYTES].clone_from_slice(bytes);
+        buffer.clone_from_slice(&bytes[..NODESECRETBYTES]);
         NodeSecret(buffer)
     }
 }
@@ -49,7 +48,7 @@ impl NodeSecret {
 impl From<Digest> for NodeSecret {
     fn from(d: Digest) -> NodeSecret {
         let mut bytes = [0u8; DIGESTBYTES];
-        bytes[..DIGESTBYTES].clone_from_slice(&d.0[..DIGESTBYTES]);
+        bytes.clone_from_slice(&d.0[..DIGESTBYTES]);
         NodeSecret(bytes)
     }
 }
@@ -57,7 +56,7 @@ impl From<Digest> for NodeSecret {
 impl From<NodeSecret> for Digest {
     fn from(n: NodeSecret) -> Digest {
         let mut bytes = [0u8; NODESECRETBYTES];
-        bytes[..NODESECRETBYTES].clone_from_slice(&n.0[..NODESECRETBYTES]);
+        bytes.clone_from_slice(&n.0[..NODESECRETBYTES]);
         Digest(bytes)
     }
 }
@@ -377,4 +376,26 @@ impl Tree {
         let (merge_path, nodes) = self.decrypt(size, &kem_path, ciphertext);
         self.merge(merge_path, &nodes);
     }
+}
+
+#[test]
+fn test_node_key_derivation() {
+    use utils::*;
+
+    let node_secret_hex = "20E029FBE9DE859E7BD6AEA95AC258AE743A9EABCCDE9358420D8C975365938714";
+    let mut cursor = Cursor::new(&hex_to_bytes(&node_secret_hex));
+    let node_secret = NodeSecret::decode(&mut cursor).unwrap();
+    let node = Node::from_secret(&node_secret);
+
+    let private_key_hex = "20E029FBE9DE859E7BD6AEA95AC258AE743A9EABCCDE9358420D8C975365938714";
+    let public_key_hex = "206667B1715A0AD45B0510E850322A8D471D4485EBCBFCC0F3BCCE7BCAE7B44F7F";
+
+    assert_eq!(
+        bytes_to_hex(&node.dh_private_key.unwrap().encode_detached()),
+        private_key_hex
+    );
+    assert_eq!(
+        bytes_to_hex(&node.dh_public_key.unwrap().encode_detached()),
+        public_key_hex
+    );
 }

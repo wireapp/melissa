@@ -219,6 +219,7 @@ impl Group {
             .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
         self.transcript
             .push(GroupOperationValue::Remove(remove.clone()));
+        self.roster.remove(index);
         self.rotate_epoch_secret();
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
@@ -312,6 +313,10 @@ fn alice_bob_charlie_walk_into_a_group() {
 
     let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
     assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
+
+    // Bob removes Alice
+    let remove_bob = group_bob.create_remove(0);
+    group_alice.process_remove(&remove_bob);
 
     // Bob updates
     let update_bob = group_bob.create_update();

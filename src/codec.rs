@@ -204,3 +204,11 @@ pub fn decode_vec_u32<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
 
     Ok(ret)
 }
+
+#[test]
+fn test_encode_vec_u8() {
+    let v: Vec<u8> = vec![1, 2, 3];
+    let mut buffer = Vec::new();
+    encode_vec_u8(&mut buffer, &v);
+    assert_eq!(buffer, vec![3u8, 1u8, 2u8, 3u8]);
+}

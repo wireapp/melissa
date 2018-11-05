@@ -84,6 +84,17 @@ impl Drop for X25519PrivateKey {
     }
 }
 
+impl Codec for X25519PrivateKey {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.0);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let mut value = [0u8; PRIVATEKEYBYTES];
+        value.clone_from_slice(&decode_vec_u8(cursor)?[..PRIVATEKEYBYTES]);
+        Ok(X25519PrivateKey(value))
+    }
+}
+
 pub struct X25519KeyPair {
     pub private_key: X25519PrivateKey,
     pub public_key: X25519PublicKey,
