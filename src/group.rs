@@ -211,16 +211,18 @@ impl Group {
         }
     }
     pub fn process_remove(&mut self, remove: &Remove) {
-        let size = self.tree.get_leaf_count();
         let index = remove.removed * 2; // FIXME should be checked against the roster
-        let kem_path = treemath::copath(index, size);
-        assert_eq!(kem_path.len(), remove.path.len());
-        self.tree
-            .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
-        self.transcript
-            .push(GroupOperationValue::Remove(remove.clone()));
-        self.roster.remove(index);
-        self.rotate_epoch_secret();
+        if index != self.tree.own_leaf_index {
+            let size = self.tree.get_leaf_count();
+            let kem_path = treemath::copath(index, size);
+            assert_eq!(kem_path.len(), remove.path.len());
+            self.tree
+                .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
+            self.transcript
+                .push(GroupOperationValue::Remove(remove.clone()));
+            self.roster.remove(index);
+            self.rotate_epoch_secret();
+        }
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
         let signer_index = self.tree.get_own_leaf_index() as u32;
@@ -314,10 +316,6 @@ fn alice_bob_charlie_walk_into_a_group() {
     let mut group_bob = Group::new_from_welcome(bob_identity, &welcome_alice_bob);
     assert_eq!(group_alice.get_init_secret(), group_bob.get_init_secret());
 
-    // Bob removes Alice
-    let remove_bob = group_bob.create_remove(0);
-    group_alice.process_remove(&remove_bob);
-
     // Bob updates
     let update_bob = group_bob.create_update();
     group_bob.process_update(1, &update_bob);
@@ -364,6 +362,7 @@ fn alice_bob_charlie_walk_into_a_group() {
     // Charlie removes Bob
     let remove_charlie_bob = group_charlie.create_remove(1);
     group_alice.process_remove(&remove_charlie_bob);
+    group_bob.process_remove(&remove_charlie_bob);
     group_charlie.process_remove(&remove_charlie_bob);
 
     assert_eq!(
