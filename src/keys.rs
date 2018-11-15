@@ -54,17 +54,6 @@ impl Codec for X25519PublicKey {
 #[derive(PartialEq, Clone, Debug)]
 pub struct X25519PrivateKey([u8; PRIVATEKEYBYTES]);
 
-impl Codec for X25519PrivateKey {
-    fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
-    }
-    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let mut value = [0u8; PRIVATEKEYBYTES];
-        value.clone_from_slice(&decode_vec_u8(cursor)?[..PRIVATEKEYBYTES]);
-        Ok(X25519PrivateKey(value))
-    }
-}
-
 pub const X25519PRIVATEKEYBYTES: usize = scalarmult::SCALARBYTES;
 
 impl X25519PrivateKey {
