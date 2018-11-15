@@ -163,3 +163,74 @@ fn encrypt_decrypt_x25519_chacha20_random() {
         assert_eq!(cleartext, decrypted);
     }
 }
+
+#[test]
+fn generate_ecies_secrets() {
+    use utils::*;
+
+    let shared_secret = sodiumoxide::randombytes::randombytes(32);
+
+    let (key, nonce) = derive_ecies_secrets(&shared_secret);
+
+    println!("Shared secret: {}", bytes_to_hex(&shared_secret));
+    println!("Key: {}", bytes_to_hex(&key.0));
+    println!("Nonce: {}", bytes_to_hex(&nonce.0));
+}
+
+#[test]
+fn test_ecies_secrets() {
+    use utils::*;
+
+    let shared_secret_hex = "626409A3109BC704CA0B39BBC7F9CB3748904509E5A4564B66B2A10B315BC6D5";
+    let shared_secret = hex_to_bytes(&shared_secret_hex);
+
+    let key_hex = "2BF6DE51B5C8CD8E45EA63B4B4D997DF";
+    let mut key_inner = <[u8; 16]>::default();
+    key_inner.copy_from_slice(&hex_to_bytes(&key_hex)[..16]);
+    let key = aesgcm::Aes128Key(key_inner);
+
+    let nonce_hex = "E66BE7FD5C91BB999D7903D9";
+    let mut nonce_inner = <[u8; 12]>::default();
+    nonce_inner.copy_from_slice(&hex_to_bytes(&nonce_hex)[..12]);
+    let nonce = aesgcm::Nonce(nonce_inner);
+
+    assert_eq!(derive_ecies_secrets(&shared_secret), (key, nonce));
+}
+
+#[test]
+fn test_eckem() {
+    use utils::*;
+
+    let alice_dh_private_key_hex =
+        "5D43BE92D01AAD353B9B4B1DC32E6C828B00DD20B46BDEB98976E13D881DC39A";
+    let alice_dh_private_key =
+        X25519PrivateKey::from_slice(&hex_to_bytes(alice_dh_private_key_hex));
+
+    let alice_dh_public_key_hex =
+        "626848EAB66583E12FB94577D2399D32B1EA13D2E3B9EC07C9D54778F9E27910";
+    let alice_dh_public_key = X25519PublicKey::from_slice(&hex_to_bytes(alice_dh_public_key_hex));
+
+    let bob_dh_private_key_hex = "FF629FC551E4B0657172E992AC543E89E0EB12EB11A8B413F140D88808B0EC40";
+    let _bob_dh_private_key = X25519PrivateKey::from_slice(&hex_to_bytes(bob_dh_private_key_hex));
+
+    let bob_dh_public_key_hex = "A724AB6198B4D07A3E1E4FD788EF73BF8C0E8120AC7DA4C228948D408943D774";
+    let bob_dh_public_key = X25519PublicKey::from_slice(&hex_to_bytes(bob_dh_public_key_hex));
+
+    let cleartext = hex_to_bytes("00010203040506070809");
+
+    let ciphertext = hex_to_bytes("8127F756973BF391AE3B0891332864D367787406F306C7DD3175");
+
+    let alice_kp = X25519KeyPair {
+        private_key: alice_dh_private_key,
+        public_key: alice_dh_public_key,
+    };
+
+    let secret = alice_kp
+        .private_key
+        .shared_secret(&bob_dh_public_key)
+        .unwrap();
+    let (key, nonce) = derive_ecies_secrets(&secret);
+    let sealed_box = aesgcm::aes_128_seal(&cleartext, &key, &nonce).unwrap();
+
+    assert_eq!(&sealed_box, &ciphertext);
+}

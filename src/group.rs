@@ -211,15 +211,18 @@ impl Group {
         }
     }
     pub fn process_remove(&mut self, remove: &Remove) {
-        let size = self.tree.get_leaf_count();
         let index = remove.removed * 2; // FIXME should be checked against the roster
-        let kem_path = treemath::copath(index, size);
-        assert_eq!(kem_path.len(), remove.path.len());
-        self.tree
-            .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
-        self.transcript
-            .push(GroupOperationValue::Remove(remove.clone()));
-        self.rotate_epoch_secret();
+        if index != self.tree.own_leaf_index {
+            let size = self.tree.get_leaf_count();
+            let kem_path = treemath::copath(index, size);
+            assert_eq!(kem_path.len(), remove.path.len());
+            self.tree
+                .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
+            self.transcript
+                .push(GroupOperationValue::Remove(remove.clone()));
+            self.roster.remove(index);
+            self.rotate_epoch_secret();
+        }
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
         let signer_index = self.tree.get_own_leaf_index() as u32;
@@ -297,10 +300,10 @@ fn alice_bob_charlie_walk_into_a_group() {
     };
 
     // Generate UserInitKeys
-    let bob_init_key_bundle = UserInitKeyBundle::new(1, &bob_identity);
+    let bob_init_key_bundle = UserInitKeyBundle::new(&bob_identity);
     let bob_init_key = bob_init_key_bundle.init_key.clone();
 
-    let charlie_init_key_bundle = UserInitKeyBundle::new(1, &charlie_identity);
+    let charlie_init_key_bundle = UserInitKeyBundle::new(&charlie_identity);
     let charlie_init_key = charlie_init_key_bundle.init_key.clone();
 
     // Create a group with Alice
@@ -359,6 +362,7 @@ fn alice_bob_charlie_walk_into_a_group() {
     // Charlie removes Bob
     let remove_charlie_bob = group_charlie.create_remove(1);
     group_alice.process_remove(&remove_charlie_bob);
+    group_bob.process_remove(&remove_charlie_bob);
     group_charlie.process_remove(&remove_charlie_bob);
 
     assert_eq!(
