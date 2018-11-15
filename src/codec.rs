@@ -142,6 +142,52 @@ impl Codec for u32 {
     }
 }
 
+impl Codec for u64 {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        ((*self >> 32) as u32, *self as u32).encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let (hi, lo) = <(u32, u32)>::decode(cursor)?;
+        Ok(((hi as u64) << 32) | (lo as u64))
+    }
+}
+
+impl<T: Codec> Codec for Option<T> {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        match self {
+            None => buffer.push(0),
+            Some(value) => {
+                buffer.push(1);
+                value.encode(buffer);
+            }
+        }
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let tag = u8::decode(cursor)?;
+        match tag {
+            0 => Ok(None),
+            1 => match T::decode(cursor) {
+                Ok(value) => Ok(Some(value)),
+                Err(e) => Err(e),
+            },
+            _ => Err(CodecError::DecodingError),
+        }
+    }
+}
+
+impl<T1: Codec, T2: Codec> Codec for (T1, T2) {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.0.encode(buffer);
+        self.1.encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        Ok((T1::decode(cursor)?, T2::decode(cursor)?))
+    }
+}
+
 pub fn encode_vec_u8<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
     let mut sub_cursor: Vec<u8> = Vec::new();
     slice.iter().for_each(|e| e.encode(&mut sub_cursor));

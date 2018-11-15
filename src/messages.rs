@@ -74,7 +74,7 @@ impl Codec for GroupOperationValue {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum GroupOperationType {
     Init = 0,
@@ -105,6 +105,7 @@ impl Codec for GroupOperationType {
     }
 }
 
+#[derive(Clone)]
 pub struct GroupOperation {
     pub msg_type: GroupOperationType,
     pub group_operation: GroupOperationValue,
@@ -125,6 +126,7 @@ impl Codec for GroupOperation {
     }
 }
 
+#[derive(Clone)]
 pub struct Handshake {
     pub prior_epoch: GroupEpoch,
     pub operation: GroupOperation,

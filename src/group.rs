@@ -69,6 +69,42 @@ pub struct Group {
     transcript: Vec<GroupOperationValue>,
 }
 
+impl Codec for Group {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.id.encode(buffer);
+        self.group_id.encode(buffer);
+        self.group_epoch.encode(buffer);
+        self.init_secret.encode(buffer);
+        self.epoch_secrets.encode(buffer);
+        encode_vec_u32(buffer, &self.roster);
+        self.tree.encode(buffer);
+        self.update_secret.encode(buffer);
+        encode_vec_u32(buffer, &self.transcript);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let id = Identity::decode(cursor)?;
+        let group_id = GroupId::decode(cursor)?;
+        let group_epoch = GroupEpoch::decode(cursor)?;
+        let init_secret = InitSecret::decode(cursor)?;
+        let epoch_secrets = Option::<EpochSecrets>::decode(cursor)?;
+        let roster = decode_vec_u32(cursor)?;
+        let tree = Tree::decode(cursor)?;
+        let update_secret = Option::<(u64, NodeSecret)>::decode(cursor)?;
+        let transcript = decode_vec_u32(cursor)?;
+        Ok(Group {
+            id,
+            group_id,
+            group_epoch,
+            init_secret,
+            epoch_secrets,
+            roster,
+            tree,
+            update_secret,
+            transcript,
+        })
+    }
+}
+
 impl Group {
     pub fn new(id: Identity, credential: BasicCredential, group_id: GroupId) -> Self {
         let secret = NodeSecret::new_random();
@@ -225,7 +261,7 @@ impl Group {
         }
     }
     pub fn create_handshake(&self, group_operation: GroupOperation) -> Handshake {
-        let signer_index = self.tree.get_own_leaf_index() as u32;
+        let signer_index = self.tree.get_own_leaf_index() as u32 / 2;
         let prior_epoch = self.group_epoch;
         let algorithm = ED25519;
         let mut hs = Handshake {
