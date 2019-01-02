@@ -49,6 +49,21 @@ impl<'a> Cursor {
         self.take(length).and_then(|buffer| Ok(Cursor::new(buffer)))
     }
 
+    pub fn sub_cursor_u8(&mut self) -> Result<Cursor, CodecError> {
+        let buffer = decode_vec_u8(self)?;
+        Ok(Self::new(&buffer))
+    }
+
+    pub fn sub_cursor_u16(&mut self) -> Result<Cursor, CodecError> {
+        let buffer = decode_vec_u16(self)?;
+        Ok(Self::new(&buffer))
+    }
+
+    pub fn sub_cursor_u32(&mut self) -> Result<Cursor, CodecError> {
+        let buffer = decode_vec_u32(self)?;
+        Ok(Self::new(&buffer))
+    }
+
     pub fn unread_bytes(&self) -> usize {
         self.buffer.len() - self.offset
     }
@@ -149,7 +164,7 @@ impl Codec for u64 {
 
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let (hi, lo) = <(u32, u32)>::decode(cursor)?;
-        Ok(((hi as u64) << 32) | (lo as u64))
+        Ok((u64::from(hi) << 32) | u64::from(lo))
     }
 }
 
@@ -215,6 +230,15 @@ pub fn encode_vec_u32<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
     bytes.append(&mut sub_cursor);
 }
 
+pub fn encode_vec_u64<T: Codec>(bytes: &mut Vec<u8>, slice: &[T]) {
+    let mut sub_cursor: Vec<u8> = Vec::new();
+    slice.iter().for_each(|e| e.encode(&mut sub_cursor));
+
+    assert!(sub_cursor.len() <= u64::max_value() as usize);
+    (sub_cursor.len() as u64).encode(bytes);
+    bytes.append(&mut sub_cursor);
+}
+
 pub fn decode_vec_u8<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
     let mut ret: Vec<T> = Vec::new();
     let len = usize::from(u8::decode(r)?);
@@ -251,10 +275,78 @@ pub fn decode_vec_u32<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
     Ok(ret)
 }
 
+pub fn decode_vec_u64<T: Codec>(r: &mut Cursor) -> Result<Vec<T>, CodecError> {
+    let mut ret: Vec<T> = Vec::new();
+    let len = u64::decode(r)? as usize;
+    let mut sub = r.sub_cursor(len)?;
+
+    while sub.has_more() {
+        ret.push(T::decode(&mut sub)?);
+    }
+
+    Ok(ret)
+}
+
+#[test]
+fn test_primitives() {
+    let uint8: u8 = 1;
+    let mut buffer = Vec::new();
+    uint8.encode(&mut buffer);
+    assert_eq!(buffer, vec![1u8]);
+
+    let uint16: u16 = 1;
+    let mut buffer = Vec::new();
+    uint16.encode(&mut buffer);
+    assert_eq!(buffer, vec![0u8, 1u8]);
+
+    let uint32: u32 = 1;
+    let mut buffer = Vec::new();
+    uint32.encode(&mut buffer);
+    assert_eq!(buffer, vec![0u8, 0u8, 0u8, 1u8]);
+
+    let uint64: u64 = 1;
+    let mut buffer = Vec::new();
+    uint64.encode(&mut buffer);
+    assert_eq!(buffer, vec![0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8]);
+}
+
 #[test]
 fn test_encode_vec_u8() {
     let v: Vec<u8> = vec![1, 2, 3];
     let mut buffer = Vec::new();
     encode_vec_u8(&mut buffer, &v);
     assert_eq!(buffer, vec![3u8, 1u8, 2u8, 3u8]);
+}
+
+#[test]
+fn test_encode_vec_u16() {
+    let v: Vec<u16> = vec![1, 2, 3];
+    let mut buffer = Vec::new();
+    encode_vec_u16(&mut buffer, &v);
+    assert_eq!(buffer, vec![0u8, 6u8, 0u8, 1u8, 0u8, 2u8, 0u8, 3u8]);
+}
+
+#[test]
+fn test_encode_vec_u32() {
+    let v: Vec<u32> = vec![1, 2, 3];
+    let mut buffer = Vec::new();
+    encode_vec_u32(&mut buffer, &v);
+    assert_eq!(
+        buffer,
+        vec![0u8, 0u8, 0u8, 12u8, 0u8, 0u8, 0u8, 1u8, 0u8, 0u8, 0u8, 2u8, 0u8, 0u8, 0u8, 3u8]
+    );
+}
+
+#[test]
+fn test_encode_vec_u64() {
+    let v: Vec<u64> = vec![1, 2, 3];
+    let mut buffer = Vec::new();
+    encode_vec_u64(&mut buffer, &v);
+    assert_eq!(
+        buffer,
+        vec![
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 24u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8,
+            0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 3u8
+        ]
+    );
 }

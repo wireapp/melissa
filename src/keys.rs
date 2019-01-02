@@ -21,16 +21,16 @@ use sodiumoxide::randombytes;
 use tree::*;
 use utils::*;
 
-pub const PUBLICKEYBYTES: usize = 32;
-pub const PRIVATEKEYBYTES: usize = 32;
+pub const X25519PRIVATEKEYBYTES: usize = scalarmult::SCALARBYTES;
+pub const X25519PUBLICKEYBYTES: usize = scalarmult::GROUPELEMENTBYTES;
+
+pub const P256PUBLICKEYBYTES: usize = 32;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Zero {}
 
 #[derive(Hash, PartialEq, Clone, Copy, Debug)]
-pub struct X25519PublicKey([u8; PUBLICKEYBYTES]);
-
-pub const X25519PUBLICKEYBYTES: usize = scalarmult::GROUPELEMENTBYTES;
+pub struct X25519PublicKey([u8; X25519PUBLICKEYBYTES]);
 
 impl X25519PublicKey {
     pub fn from_slice(bytes: &[u8]) -> X25519PublicKey {
@@ -42,19 +42,17 @@ impl X25519PublicKey {
 
 impl Codec for X25519PublicKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
+        encode_vec_u16(buffer, &self.0);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let mut value = [0u8; X25519PUBLICKEYBYTES];
-        value.clone_from_slice(&decode_vec_u8(cursor)?[..X25519PUBLICKEYBYTES]);
+        value.clone_from_slice(&decode_vec_u16(cursor)?[..X25519PUBLICKEYBYTES]);
         Ok(X25519PublicKey(value))
     }
 }
 
 #[derive(PartialEq, Clone, Debug)]
-pub struct X25519PrivateKey([u8; PRIVATEKEYBYTES]);
-
-pub const X25519PRIVATEKEYBYTES: usize = scalarmult::SCALARBYTES;
+pub struct X25519PrivateKey([u8; X25519PRIVATEKEYBYTES]);
 
 impl X25519PrivateKey {
     pub fn shared_secret(&self, p: &X25519PublicKey) -> Result<[u8; 32], Zero> {
@@ -73,7 +71,7 @@ impl X25519PrivateKey {
         inner.copy_from_slice(&bytes[..X25519PRIVATEKEYBYTES]);
         X25519PrivateKey(inner)
     }
-    pub fn to_bytes(&self) -> [u8; PRIVATEKEYBYTES] {
+    pub fn to_bytes(&self) -> [u8; X25519PRIVATEKEYBYTES] {
         self.0
     }
 }
@@ -86,11 +84,11 @@ impl Drop for X25519PrivateKey {
 
 impl Codec for X25519PrivateKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
+        encode_vec_u16(buffer, &self.0);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let mut value = [0u8; PRIVATEKEYBYTES];
-        value.clone_from_slice(&decode_vec_u8(cursor)?[..PRIVATEKEYBYTES]);
+        let mut value = [0u8; X25519PRIVATEKEYBYTES];
+        value.clone_from_slice(&decode_vec_u16(cursor)?[..X25519PRIVATEKEYBYTES]);
         Ok(X25519PrivateKey(value))
     }
 }
@@ -125,6 +123,8 @@ impl X25519KeyPair {
     }
 }
 
+pub struct P256PublicKey([u8; 65]);
+
 #[derive(PartialEq, Clone)]
 pub struct LeafKey {
     pub private_key: Option<X25519PrivateKey>,
@@ -136,10 +136,10 @@ pub type SignaturePublicKey = ed25519::PublicKey;
 
 impl Codec for SignaturePublicKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
+        encode_vec_u16(buffer, &self.0);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let bytes = decode_vec_u8(cursor)?;
+        let bytes = decode_vec_u16(cursor)?;
         Ok(SignaturePublicKey::from_slice(&bytes).unwrap())
     }
 }
@@ -148,10 +148,10 @@ pub type SignaturePrivateKey = ed25519::SecretKey;
 
 impl Codec for SignaturePrivateKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
+        encode_vec_u16(buffer, &self.0);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let bytes = decode_vec_u8(cursor)?;
+        let bytes = decode_vec_u16(cursor)?;
         Ok(SignaturePrivateKey::from_slice(&bytes).unwrap())
     }
 }
@@ -160,17 +160,18 @@ pub type Signature = ed25519::Signature;
 
 impl Codec for Signature {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.0);
+        encode_vec_u16(buffer, &self.0);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let bytes = decode_vec_u8(cursor)?;
+        let bytes = decode_vec_u16(cursor)?;
         Ok(Signature::from_slice(&bytes).unwrap())
     }
 }
 
 pub type SignatureScheme = u16;
 
-pub const ED25519: SignatureScheme = 0;
+pub const ED25519: SignatureScheme = 0x0807;
+pub const ECDSA_SECP256R1_SHA256: SignatureScheme = 0x0403;
 
 #[derive(Clone)]
 pub struct Identity {
@@ -278,8 +279,8 @@ pub const AES128GCM_CURVE25519_SHA256: CipherSuite = 1;
 pub struct UserInitKey {
     pub cipher_suites: Vec<CipherSuite>,
     pub init_keys: Vec<X25519PublicKey>, /* [2^16-1] */
-    pub identity_key: SignaturePublicKey,
     pub algorithm: SignatureScheme,
+    pub identity_key: SignaturePublicKey,
     pub signature: Signature,
 }
 
@@ -288,8 +289,8 @@ impl UserInitKey {
         let mut init_key = Self {
             cipher_suites: vec![AES128GCM_CURVE25519_SHA256],
             init_keys: init_keys.to_owned(),
-            identity_key: identity.public_key,
             algorithm: ED25519,
+            identity_key: identity.public_key,
             signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
         };
         init_key.signature = identity.sign(&init_key.unsigned_payload());
@@ -307,28 +308,56 @@ impl UserInitKey {
 impl Signable for UserInitKey {
     fn unsigned_payload(&self) -> Vec<u8> {
         let buffer = &mut Vec::new();
-        encode_vec_u16(buffer, &self.cipher_suites);
+        encode_vec_u8(buffer, &self.cipher_suites);
         encode_vec_u16(buffer, &self.init_keys);
-        self.identity_key.encode(buffer);
         self.algorithm.encode(buffer);
+        self.identity_key.encode(buffer);
         buffer.to_vec()
     }
 }
 
 impl Codec for UserInitKey {
     fn encode(&self, buffer: &mut Vec<u8>) {
-        encode_vec_u8(buffer, &self.cipher_suites);
-        encode_vec_u16(buffer, &self.init_keys);
-        self.identity_key.encode(buffer);
-        self.algorithm.encode(buffer);
+        buffer.append(&mut self.unsigned_payload());
         self.signature.encode(buffer);
     }
 
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let cipher_suites: Vec<CipherSuite> = decode_vec_u8(cursor)?;
-        let init_keys: Vec<X25519PublicKey> = decode_vec_u16(cursor)?;
-        let identity_key = SignaturePublicKey::decode(cursor)?;
+
+        let mut cs_payload = cursor.sub_cursor_u16()?;
+        let mut x25519_key: Option<X25519PublicKey> = None;
+
+        if !cipher_suites.is_empty() {
+            for cs in cipher_suites.clone() {
+                match cs {
+                    AES128GCM_P256_SHA256 => {
+                        let _pub_key: Vec<u8> = decode_vec_u16(&mut cs_payload)?;
+                    }
+                    AES128GCM_CURVE25519_SHA256 => {
+                        x25519_key = Some(X25519PublicKey::decode(&mut cs_payload)?);
+                    }
+                    _ => {
+                        let _pub_key: Vec<u8> = decode_vec_u16(&mut cs_payload)?;
+                        return Err(CodecError::DecodingError);
+                    }
+                }
+            }
+        } else {
+            return Err(CodecError::DecodingError);
+        }
+
+        if x25519_key.is_none() {
+            return Err(CodecError::DecodingError);
+        }
+
+        let init_keys: Vec<X25519PublicKey> = vec![x25519_key.unwrap()];
         let algorithm = SignatureScheme::decode(cursor)?;
+
+        if algorithm != ED25519 {
+            return Err(CodecError::DecodingError);
+        }
+        let identity_key = SignaturePublicKey::decode(cursor)?;
         let signature = Signature::decode(cursor)?;
         Ok(UserInitKey {
             cipher_suites,
@@ -449,8 +478,8 @@ fn test_user_init_key() {
     let mut uik = UserInitKey {
         cipher_suites: vec![AES128GCM_CURVE25519_SHA256],
         init_keys: vec![dh_public_key],
-        identity_key: signature_public_key,
         algorithm: ED25519,
+        identity_key: signature_public_key,
         signature: empty_signature,
     };
 
@@ -460,7 +489,68 @@ fn test_user_init_key() {
     let mut buffer = Vec::new();
     uik.encode(&mut buffer);
 
-    let uik_hex = "0200010021203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C0000040F5CAFFED4C5E5F5F0E8B1807A09112268A195252A868AB1B9D5E930D2484189918F4989030DC5291BBFB0711E95529F3E54470BA31F465892886D511B74FF807";
+    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
 
     assert_eq!(bytes_to_hex(&buffer), uik_hex);
+}
+
+#[test]
+fn test_uik_interop() {
+    //let uik_hex = "0400000001006500410435d35a5a3c4a18cf5ca7987fd15052d3001188b9c61d40a584b1fb0fe211fbcb9e549ed1d8ca4a3f8e418a769dfca8ba8be66b0cd8e4ead5d4e7b02ae283600c00201d6ed559fdeb33dd0949173cdd3edbc255df7f63eff729d1932e0438e10d371e004104f789b44019f509ee6d7f5a30548f95da8968ec5492bb9d007ed40766032a22f046e6b2906b03907279e8548866a7461c13e139c2dda31ca2c6600d1b8e9c464f000000473045022019ea04a6ba35093a0993fdf57ca6ecbec700e8584b7a8cd197ccd080b1cca4dc022100ed1816942ac9511180bc63ee03dd2de1523307c35de3e46d234c9c8eb8fa765d";
+    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
+    let uik_bytes = hex_to_bytes(uik_hex);
+    let mut cursor = Cursor::new(&uik_bytes);
+
+    let cipher_suites: Vec<CipherSuite> = decode_vec_u8(&mut cursor).unwrap();
+    println!("Ciphersuites: {:?}", cipher_suites);
+    let mut cs_payload = cursor.sub_cursor_u16().unwrap();
+
+    if cipher_suites.len() > 0 {
+        for cs in cipher_suites {
+            match cs {
+                AES128GCM_P256_SHA256 => {
+                    let p256_key: Vec<u8> = decode_vec_u16(&mut cs_payload).unwrap();
+                    println!(
+                        "Found a P256 key, size: {}, payload: {}",
+                        p256_key.len(),
+                        bytes_to_hex(&p256_key)
+                    );
+                }
+                AES128GCM_CURVE25519_SHA256 => {
+                    let x25519_key: Vec<u8> = decode_vec_u16(&mut cs_payload).unwrap();
+                    println!(
+                        "Found a X25519 key, size: {}, payload: {}",
+                        x25519_key.len(),
+                        bytes_to_hex(&x25519_key)
+                    );
+                }
+                _ => {
+                    println!("Found an unknown key");
+                }
+            }
+        }
+    }
+    let algorithm = SignatureScheme::decode(&mut cursor).unwrap();
+    println!("Found algorithm: {}", algorithm);
+    let identity_key: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
+    println!(
+        "Found identity key: size: {}, payload: {}",
+        identity_key.len(),
+        bytes_to_hex(&identity_key)
+    );
+    println!("Bytes left: {}", cursor.unread_bytes());
+    let signature: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
+    println!(
+        "Found signature: size: {}, payload: {}",
+        signature.len(),
+        bytes_to_hex(&signature)
+    );
+
+    let mut cursor = Cursor::new(&uik_bytes);
+    let uik = UserInitKey::decode(&mut cursor).unwrap();
+
+    let mut buffer = Vec::new();
+    uik.encode(&mut buffer);
+
+    assert_eq!(uik_bytes, buffer);
 }
