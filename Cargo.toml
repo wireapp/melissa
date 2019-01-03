@@ -7,3 +7,10 @@ authors = ["Wire <opensource@wire.com>"]
 sodiumoxide = "^0.2"
 libsodium-sys = "^0.2"
 ring = "^0.13"
+
+[dev-dependencies]
+criterion = "^0.2"
+
+[[bench]]
+name = "benchmark"
+harness = false
