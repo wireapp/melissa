@@ -44,6 +44,43 @@ fn eckem_decrypt(private_key: &X25519PrivateKey, ciphertext: &X25519AESCiphertex
     let _decrypted = X25519AES::decrypt(private_key, ciphertext).unwrap();
 }
 
+// UserInitKeys
+
+fn create_uik_bundle(identity: &Identity) -> UserInitKeyBundle {
+    UserInitKeyBundle::new(&identity)
+}
+
+fn large_group() {
+    const GROUPSIZE: usize = 10;
+
+    let mut identities: Vec<Identity> = Vec::new();
+    let mut credentials: Vec<BasicCredential> = Vec::new();
+    let mut uiks: Vec<UserInitKeyBundle> = Vec::new();
+    let mut groups: Vec<Group> = Vec::new();
+
+    for i in 0..GROUPSIZE {
+        let identity = Identity::random();
+        identities.push(identity.clone());
+        let credential = BasicCredential {
+            identity: format!("Member {}", i).as_bytes().to_vec(),
+            public_key: identity.public_key,
+        };
+        credentials.push(credential.clone());
+        uiks.push(UserInitKeyBundle::new(&identity));
+        groups.push(Group::new(identity, credential, GroupId::random()));
+    }
+
+    for i in 0..GROUPSIZE {
+        for j in 0..GROUPSIZE {
+            if i != j {
+                let (_welcome_alice_bob, add_alice_bob) =
+                    groups[i].create_add(credentials[j].clone(), &uiks[j].init_key);
+                groups[i].process_add(&add_alice_bob);
+            }
+        }
+    }
+}
+
 // Groups
 
 fn create_group() {
@@ -106,7 +143,17 @@ fn criterion_benchmark(c: &mut Criterion) {
             |(ciphertext, key, nonce)| aes128_open(&ciphertext, &key, &nonce),
         )
     });
+    c.bench_function("UserInitKey create bundle", |b| {
+        b.iter_with_setup(
+            || {
+                let identity = Identity::random();
+                identity
+            },
+            |identity| create_uik_bundle(&identity),
+        )
+    });
     c.bench_function("Create group: Alice & Bob", |b| b.iter(|| create_group()));
+    c.bench_function("Create large group", |b| b.iter(|| large_group()));
 }
 
 criterion_group!(benches, criterion_benchmark);
