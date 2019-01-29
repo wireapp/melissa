@@ -1,9 +1,16 @@
 [package]
 name = "melissa"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Wire <opensource@wire.com>"]
 
 [dependencies]
-sodiumoxide = "^0.1"
-libsodium-sys = "^0.1"
+sodiumoxide = "^0.2"
+libsodium-sys = "^0.2"
 ring = "^0.13"
+
+[dev-dependencies]
+criterion = "^0.2"
+
+[[bench]]
+name = "benchmark"
+harness = false
