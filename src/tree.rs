@@ -412,6 +412,64 @@ impl Tree {
 }
 
 #[test]
+fn verify_binary_test_vector_resolution() {
+    use codec::*;
+    use std::fs::File;
+    use std::io::Read;
+    use treemath;
+
+    let mut file = File::open("test_vectors/resolution.bin").unwrap();
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer).unwrap();
+
+    let mut cursor = Cursor::new(&buffer);
+
+    let node_secret = NodeSecret::new_random();
+    let blank_node = Node::new_blank();
+    let full_node = Node::from_secret(&node_secret);
+
+    let n_leaves = u32::decode(&mut cursor).unwrap() as usize;
+    let cases: Vec<u8> = decode_vec_u32(&mut cursor).unwrap();
+    let number_of_cases = treemath::pow2(2 * n_leaves - 1);
+    let number_of_nodes = treemath::node_width(n_leaves);
+
+    let mut cases_cursor = Cursor::new(&cases);
+    for case_index in 0..number_of_cases {
+        let resolution_case: Vec<u8> = decode_vec_u16(&mut cases_cursor).unwrap();
+
+        let mut nodes: Vec<Node> = Vec::new();
+        for node_index in 0..number_of_nodes {
+            let is_blank = (case_index >> node_index) & 1 == 1;
+            match is_blank {
+                true => nodes.push(full_node.clone()),
+                false => nodes.push(blank_node.clone()),
+            }
+        }
+
+        let tree = Tree {
+            nodes,
+            own_leaf_index: 0,
+        };
+
+        let mut resolution_case_cursor = Cursor::new(&resolution_case);
+        for node_index in 0..number_of_nodes {
+            let test_resolution: Vec<u8> = decode_vec_u8(&mut resolution_case_cursor).unwrap();
+
+            let actual_resolution = tree.resolve(node_index);
+
+            assert_eq!(test_resolution.len(), actual_resolution.len());
+
+            for resolution_index in 0..test_resolution.len() {
+                assert_eq!(
+                    test_resolution[resolution_index] as usize,
+                    actual_resolution[resolution_index]
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_node_key_derivation() {
     use utils::*;
 
