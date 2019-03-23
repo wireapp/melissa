@@ -1,5 +1,5 @@
 // Wire
-// Copyright (C) 2018 Wire Swiss GmbH
+// Copyright (C) 2019 Wire Swiss GmbH
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -14,17 +14,15 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
-extern crate libsodium_sys;
-extern crate ring;
-extern crate sodiumoxide;
+pub struct Roster {}
 
-pub mod codec;
-pub mod crypto;
-pub mod group;
-pub mod keys;
-pub mod messages;
-pub mod mp;
-pub mod roster;
-pub mod tree;
-pub mod treemath;
-pub mod utils;
+impl Roster {
+    pub fn len() -> usize {
+        0
+    }
+    pub fn get(index: usize) {}
+    pub fn add() {}
+    pub fn remove(index: usize) {}
+}
+
+// codec
