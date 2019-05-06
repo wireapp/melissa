@@ -271,6 +271,7 @@ impl Codec for BasicCredential {
 }
 
 pub type CipherSuite = u16;
+pub type ProtocolVersion = u8;
 
 pub const AES128GCM_P256_SHA256: CipherSuite = 0;
 pub const AES128GCM_CURVE25519_SHA256: CipherSuite = 1;
@@ -282,6 +283,7 @@ pub struct UserInitKey {
     pub algorithm: SignatureScheme,
     pub identity_key: SignaturePublicKey,
     pub signature: Signature,
+    pub supported_versions: Vec<ProtocolVersion>,
 }
 
 impl UserInitKey {
@@ -292,6 +294,7 @@ impl UserInitKey {
             algorithm: ED25519,
             identity_key: identity.public_key,
             signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
+            supported_versions: vec![1],
         };
         init_key.signature = identity.sign(&init_key.unsigned_payload());
         init_key
@@ -312,6 +315,7 @@ impl Signable for UserInitKey {
         encode_vec_u16(buffer, &self.init_keys);
         self.algorithm.encode(buffer);
         self.identity_key.encode(buffer);
+        encode_vec_u8(buffer, &self.supported_versions);
         buffer.to_vec()
     }
 }
@@ -359,12 +363,14 @@ impl Codec for UserInitKey {
         }
         let identity_key = SignaturePublicKey::decode(cursor)?;
         let signature = Signature::decode(cursor)?;
+        let supported_versions: Vec<ProtocolVersion> = decode_vec_u8(cursor)?;
         Ok(UserInitKey {
             cipher_suites,
             init_keys,
             identity_key,
             algorithm,
             signature,
+            supported_versions,
         })
     }
 }
@@ -475,12 +481,15 @@ fn test_user_init_key() {
     let empty_signature_inner: [u8; ed25519::SIGNATUREBYTES] = [0u8; ed25519::SIGNATUREBYTES];
     let empty_signature = ed25519::Signature::from_slice(&empty_signature_inner).unwrap();
 
+    let supported_versions = vec![1];
+
     let mut uik = UserInitKey {
         cipher_suites: vec![AES128GCM_CURVE25519_SHA256],
         init_keys: vec![dh_public_key],
         algorithm: ED25519,
         identity_key: signature_public_key,
         signature: empty_signature,
+        supported_versions: supported_versions,
     };
 
     let signature = ed25519::sign_detached(&uik.unsigned_payload(), &signature_private_key);
