@@ -176,7 +176,7 @@ pub struct Welcome {
     pub epoch: GroupEpoch,
     pub roster: Vec<BasicCredential>,
     pub tree: Vec<X25519PublicKey>,
-    pub transcript: Vec<GroupOperationValue>,
+    pub transcript_hash: Vec<GroupOperationValue>,
     pub init_secret: InitSecret,
     pub leaf_secret: NodeSecret,
     pub version: ProtocolVersion,
@@ -188,7 +188,7 @@ impl Codec for Welcome {
         self.epoch.encode(buffer);
         encode_vec_u16(buffer, &self.roster);
         encode_vec_u16(buffer, &self.tree);
-        encode_vec_u16(buffer, &self.transcript);
+        encode_vec_u16(buffer, &self.transcript_hash);
         self.init_secret.encode(buffer);
         self.leaf_secret.encode(buffer);
         self.version.encode(buffer);
@@ -198,7 +198,7 @@ impl Codec for Welcome {
         let epoch = GroupEpoch::decode(cursor)?;
         let roster = decode_vec_u16(cursor)?;
         let tree = decode_vec_u16(cursor)?;
-        let transcript = decode_vec_u16(cursor)?;
+        let transcript_hash = decode_vec_u16(cursor)?;
         let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
         let version = u8::decode(cursor)?;
@@ -207,7 +207,7 @@ impl Codec for Welcome {
             epoch,
             roster,
             tree,
-            transcript,
+            transcript_hash,
             init_secret,
             leaf_secret,
             version,
