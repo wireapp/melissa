@@ -271,10 +271,12 @@ impl Codec for BasicCredential {
 }
 
 pub type CipherSuite = u16;
-pub type ProtocolVersion = u8;
+pub type ProtocolVersion = u16;
 
 pub const AES128GCM_P256_SHA256: CipherSuite = 0;
 pub const AES128GCM_CURVE25519_SHA256: CipherSuite = 1;
+
+pub const CURRENT_VERSION: u16 = 1;
 
 #[derive(Clone)]
 pub struct UserInitKey {
@@ -294,7 +296,7 @@ impl UserInitKey {
             algorithm: ED25519,
             identity_key: identity.public_key,
             signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
-            supported_versions: vec![1],
+            supported_versions: vec![CURRENT_VERSION],
         };
         init_key.signature = identity.sign(&init_key.unsigned_payload());
         init_key
@@ -363,7 +365,7 @@ impl Codec for UserInitKey {
         }
         let identity_key = SignaturePublicKey::decode(cursor)?;
         let signature = Signature::decode(cursor)?;
-        let supported_versions: Vec<ProtocolVersion> = decode_vec_u8(cursor)?;
+        let supported_versions: Vec<ProtocolVersion> = decode_vec_u16(cursor)?;
         Ok(UserInitKey {
             cipher_suites,
             init_keys,
@@ -481,7 +483,7 @@ fn test_user_init_key() {
     let empty_signature_inner: [u8; ed25519::SIGNATUREBYTES] = [0u8; ed25519::SIGNATUREBYTES];
     let empty_signature = ed25519::Signature::from_slice(&empty_signature_inner).unwrap();
 
-    let supported_versions = vec![1];
+    let supported_versions = vec![CURRENT_VERSION];
 
     let mut uik = UserInitKey {
         cipher_suites: vec![AES128GCM_CURVE25519_SHA256],
@@ -498,15 +500,14 @@ fn test_user_init_key() {
     let mut buffer = Vec::new();
     uik.encode(&mut buffer);
 
-    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
+    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C002000100402A6B56527C2B8C942D0DD8CC5031663B7C43CE4D104C5CAF9A3EA270D4AF8F6DA75C5F68CB9E64CFCD10371ACF6E007F68F151C35162B474865159465E90A703";
 
     assert_eq!(bytes_to_hex(&buffer), uik_hex);
 }
 
 #[test]
 fn test_uik_interop() {
-    //let uik_hex = "0400000001006500410435d35a5a3c4a18cf5ca7987fd15052d3001188b9c61d40a584b1fb0fe211fbcb9e549ed1d8ca4a3f8e418a769dfca8ba8be66b0cd8e4ead5d4e7b02ae283600c00201d6ed559fdeb33dd0949173cdd3edbc255df7f63eff729d1932e0438e10d371e004104f789b44019f509ee6d7f5a30548f95da8968ec5492bb9d007ed40766032a22f046e6b2906b03907279e8548866a7461c13e139c2dda31ca2c6600d1b8e9c464f000000473045022019ea04a6ba35093a0993fdf57ca6ecbec700e8584b7a8cd197ccd080b1cca4dc022100ed1816942ac9511180bc63ee03dd2de1523307c35de3e46d234c9c8eb8fa765d";
-    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
+    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C002000100402A6B56527C2B8C942D0DD8CC5031663B7C43CE4D104C5CAF9A3EA270D4AF8F6DA75C5F68CB9E64CFCD10371ACF6E007F68F151C35162B474865159465E90A703";
     let uik_bytes = hex_to_bytes(uik_hex);
     let mut cursor = Cursor::new(&uik_bytes);
 
@@ -547,12 +548,17 @@ fn test_uik_interop() {
         identity_key.len(),
         bytes_to_hex(&identity_key)
     );
-    println!("Bytes left: {}", cursor.unread_bytes());
     let signature: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
     println!(
         "Found signature: size: {}, payload: {}",
         signature.len(),
         bytes_to_hex(&signature)
+    );
+    println!("Bytes left: {}", cursor.unread_bytes());
+    let supported_versions: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
+    println!(
+        "Found supported versions: {}",
+        bytes_to_hex(&supported_versions)
     );
 
     let mut cursor = Cursor::new(&uik_bytes);

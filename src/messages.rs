@@ -201,7 +201,7 @@ impl Codec for Welcome {
         let transcript_hash = decode_vec_u16(cursor)?;
         let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
-        let version = u8::decode(cursor)?;
+        let version = ProtocolVersion::decode(cursor)?;
         Ok(Welcome {
             group_id,
             epoch,
