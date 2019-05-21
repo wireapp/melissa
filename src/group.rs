@@ -66,7 +66,7 @@ pub struct Group {
     roster: Vec<BasicCredential>,
     tree: Tree,
     update_secret: Option<(u64, NodeSecret)>,
-    transcript_hash: Vec<GroupOperationValue>,
+    transcript: Vec<GroupOperationValue>,
 }
 
 impl Codec for Group {
@@ -79,7 +79,7 @@ impl Codec for Group {
         encode_vec_u32(buffer, &self.roster);
         self.tree.encode(buffer);
         self.update_secret.encode(buffer);
-        encode_vec_u32(buffer, &self.transcript_hash);
+        encode_vec_u32(buffer, &self.transcript);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let id = Identity::decode(cursor)?;
@@ -90,7 +90,7 @@ impl Codec for Group {
         let roster = decode_vec_u32(cursor)?;
         let tree = Tree::decode(cursor)?;
         let update_secret = Option::<(u64, NodeSecret)>::decode(cursor)?;
-        let transcript_hash = decode_vec_u32(cursor)?;
+        let transcript = decode_vec_u32(cursor)?;
         Ok(Group {
             id,
             group_id,
@@ -100,7 +100,7 @@ impl Codec for Group {
             roster,
             tree,
             update_secret,
-            transcript_hash,
+            transcript,
         })
     }
 }
@@ -120,7 +120,7 @@ impl Group {
             roster: vec![credential],
             tree,
             update_secret: None,
-            transcript_hash: vec![],
+            transcript: vec![],
         }
     }
     pub fn new_from_welcome(id: Identity, welcome: &Welcome) -> Self {
@@ -140,7 +140,7 @@ impl Group {
             roster,
             tree,
             update_secret: None,
-            transcript_hash: welcome.transcript_hash.clone(),
+            transcript: welcome.transcript.clone(),
         }
     }
     pub fn create_add(&mut self, id: BasicCredential, init_key: &UserInitKey) -> (Welcome, Add) {
@@ -171,7 +171,7 @@ impl Group {
             epoch: welcome_group.group_epoch,
             roster: welcome_group.roster.clone(),
             tree: welcome_group.tree.get_public_key_tree(),
-            transcript_hash: welcome_group.transcript_hash.clone(),
+            transcript: welcome_group.transcript.clone(),
             init_secret: welcome_group.get_init_secret(),
             leaf_secret,
             version: CURRENT_VERSION,
@@ -191,7 +191,7 @@ impl Group {
             public_key: add.init_key.identity_key,
         };
         self.roster.push(bc);
-        self.transcript_hash.push(GroupOperationValue::Add(add.clone()));
+        self.transcript.push(GroupOperationValue::Add(add.clone()));
         self.rotate_epoch_secret();
     }
     pub fn create_update(&mut self) -> Update {
@@ -231,7 +231,7 @@ impl Group {
                 .apply_kem_path(index, size, &kem_path, &update.path, &update.nodes);
         }
         self.update_secret = None;
-        self.transcript_hash
+        self.transcript
             .push(GroupOperationValue::Update(update.clone()));
         self.rotate_epoch_secret();
     }
@@ -256,7 +256,7 @@ impl Group {
             assert_eq!(kem_path.len(), remove.path.len());
             self.tree
                 .apply_kem_path(index, size, &kem_path, &remove.path, &remove.nodes);
-            self.transcript_hash
+            self.transcript
                 .push(GroupOperationValue::Remove(remove.clone()));
             self.roster.remove(index);
             self.rotate_epoch_secret();
@@ -313,7 +313,7 @@ impl Group {
         self.group_epoch.encode(buffer);
         encode_vec_u16(buffer, &self.roster);
         encode_vec_u16(buffer, &self.tree.get_public_key_tree());
-        encode_vec_u16(buffer, &self.transcript_hash); // FIXME
+        encode_vec_u16(buffer, &self.transcript); // FIXME
     }
 }
 
