@@ -179,6 +179,7 @@ pub struct Welcome {
     pub transcript: Vec<GroupOperationValue>,
     pub init_secret: InitSecret,
     pub leaf_secret: NodeSecret,
+    pub version: ProtocolVersion,
 }
 
 impl Codec for Welcome {
@@ -190,6 +191,7 @@ impl Codec for Welcome {
         encode_vec_u16(buffer, &self.transcript);
         self.init_secret.encode(buffer);
         self.leaf_secret.encode(buffer);
+        self.version.encode(buffer);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let group_id = GroupId::decode(cursor)?;
@@ -199,6 +201,7 @@ impl Codec for Welcome {
         let transcript = decode_vec_u16(cursor)?;
         let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
+        let version = ProtocolVersion::decode(cursor)?;
         Ok(Welcome {
             group_id,
             epoch,
@@ -207,6 +210,7 @@ impl Codec for Welcome {
             transcript,
             init_secret,
             leaf_secret,
+            version,
         })
     }
 }
@@ -234,6 +238,7 @@ pub struct Add {
     pub nodes: Vec<X25519PublicKey>,
     pub path: Vec<X25519AESCiphertext>,
     pub init_key: UserInitKey,
+    pub index: u32,
 }
 
 impl Codec for Add {
@@ -241,15 +246,18 @@ impl Codec for Add {
         encode_vec_u16(buffer, &self.nodes);
         encode_vec_u16(buffer, &self.path);
         self.init_key.encode(buffer);
+        self.index.encode(buffer);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let nodes = decode_vec_u16(cursor)?;
         let path = decode_vec_u16(cursor)?;
         let init_key = UserInitKey::decode(cursor)?;
+        let index = u32::decode(cursor)?;
         Ok(Add {
             nodes,
             path,
             init_key,
+            index
         })
     }
 }

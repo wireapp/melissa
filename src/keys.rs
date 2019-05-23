@@ -271,9 +271,12 @@ impl Codec for BasicCredential {
 }
 
 pub type CipherSuite = u16;
+pub type ProtocolVersion = u16;
 
 pub const AES128GCM_P256_SHA256: CipherSuite = 0;
 pub const AES128GCM_CURVE25519_SHA256: CipherSuite = 1;
+
+pub const CURRENT_VERSION: u16 = 1;
 
 #[derive(Clone)]
 pub struct UserInitKey {
@@ -282,6 +285,7 @@ pub struct UserInitKey {
     pub algorithm: SignatureScheme,
     pub identity_key: SignaturePublicKey,
     pub signature: Signature,
+    pub supported_versions: Vec<ProtocolVersion>,
 }
 
 impl UserInitKey {
@@ -292,6 +296,7 @@ impl UserInitKey {
             algorithm: ED25519,
             identity_key: identity.public_key,
             signature: Signature::from_slice(&[0u8; ed25519::SIGNATUREBYTES]).unwrap(),
+            supported_versions: vec![CURRENT_VERSION],
         };
         init_key.signature = identity.sign(&init_key.unsigned_payload());
         init_key
@@ -312,6 +317,7 @@ impl Signable for UserInitKey {
         encode_vec_u16(buffer, &self.init_keys);
         self.algorithm.encode(buffer);
         self.identity_key.encode(buffer);
+        encode_vec_u8(buffer, &self.supported_versions);
         buffer.to_vec()
     }
 }
@@ -359,12 +365,14 @@ impl Codec for UserInitKey {
         }
         let identity_key = SignaturePublicKey::decode(cursor)?;
         let signature = Signature::decode(cursor)?;
+        let supported_versions: Vec<ProtocolVersion> = decode_vec_u16(cursor)?;
         Ok(UserInitKey {
             cipher_suites,
             init_keys,
             identity_key,
             algorithm,
             signature,
+            supported_versions,
         })
     }
 }
@@ -453,104 +461,4 @@ fn generate_user_init_key() {
         bytes_to_hex(&dh_kp.private_key.0),
         bytes_to_hex(&dh_kp.public_key.0)
     );
-}
-
-#[test]
-fn test_user_init_key() {
-    let signature_private_key_hex =
-        "AA5A90D1AA3DEECB657F43630680A0001FC910506DC8D3D363095E5E7A7D1B6C5F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C0";
-    let signature_private_key =
-        ed25519::SecretKey::from_slice(&hex_to_bytes(signature_private_key_hex)).unwrap();
-    let signature_public_key_hex =
-        "5F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C0";
-    let signature_public_key =
-        ed25519::PublicKey::from_slice(&hex_to_bytes(signature_public_key_hex)).unwrap();
-
-    let dh_private_key_hex = "EC332FA1FFEF173E1807B2896D86F25A85231070993A3542AE582D2D563ED42C";
-    let _dh_private_key = X25519PrivateKey::from_slice(&hex_to_bytes(dh_private_key_hex));
-
-    let dh_public_key_hex = "3CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C";
-    let dh_public_key = X25519PublicKey::from_slice(&hex_to_bytes(dh_public_key_hex));
-
-    let empty_signature_inner: [u8; ed25519::SIGNATUREBYTES] = [0u8; ed25519::SIGNATUREBYTES];
-    let empty_signature = ed25519::Signature::from_slice(&empty_signature_inner).unwrap();
-
-    let mut uik = UserInitKey {
-        cipher_suites: vec![AES128GCM_CURVE25519_SHA256],
-        init_keys: vec![dh_public_key],
-        algorithm: ED25519,
-        identity_key: signature_public_key,
-        signature: empty_signature,
-    };
-
-    let signature = ed25519::sign_detached(&uik.unsigned_payload(), &signature_private_key);
-    uik.signature = signature;
-
-    let mut buffer = Vec::new();
-    uik.encode(&mut buffer);
-
-    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
-
-    assert_eq!(bytes_to_hex(&buffer), uik_hex);
-}
-
-#[test]
-fn test_uik_interop() {
-    //let uik_hex = "0400000001006500410435d35a5a3c4a18cf5ca7987fd15052d3001188b9c61d40a584b1fb0fe211fbcb9e549ed1d8ca4a3f8e418a769dfca8ba8be66b0cd8e4ead5d4e7b02ae283600c00201d6ed559fdeb33dd0949173cdd3edbc255df7f63eff729d1932e0438e10d371e004104f789b44019f509ee6d7f5a30548f95da8968ec5492bb9d007ed40766032a22f046e6b2906b03907279e8548866a7461c13e139c2dda31ca2c6600d1b8e9c464f000000473045022019ea04a6ba35093a0993fdf57ca6ecbec700e8584b7a8cd197ccd080b1cca4dc022100ed1816942ac9511180bc63ee03dd2de1523307c35de3e46d234c9c8eb8fa765d";
-    let uik_hex = "020001002200203CB3FC6B9271B308EFEDC029502278DED42FC4AF181A44E31549F53B9BF7436C080700205F334D034259E2D6670D6CA8F5A937EA7CE9438259292F8872AEA6C7BB8AA2C000407DF11F6392DC7F1BD6FAFB34AA220C5457D2E58A2BB2C21DA4878A3E8AB8B0BA2AF2A87E7102D23DE169F880E38688406B34E582B6E978867755E37FB352DB0C";
-    let uik_bytes = hex_to_bytes(uik_hex);
-    let mut cursor = Cursor::new(&uik_bytes);
-
-    let cipher_suites: Vec<CipherSuite> = decode_vec_u8(&mut cursor).unwrap();
-    println!("Ciphersuites: {:?}", cipher_suites);
-    let mut cs_payload = cursor.sub_cursor_u16().unwrap();
-
-    if cipher_suites.len() > 0 {
-        for cs in cipher_suites {
-            match cs {
-                AES128GCM_P256_SHA256 => {
-                    let p256_key: Vec<u8> = decode_vec_u16(&mut cs_payload).unwrap();
-                    println!(
-                        "Found a P256 key, size: {}, payload: {}",
-                        p256_key.len(),
-                        bytes_to_hex(&p256_key)
-                    );
-                }
-                AES128GCM_CURVE25519_SHA256 => {
-                    let x25519_key: Vec<u8> = decode_vec_u16(&mut cs_payload).unwrap();
-                    println!(
-                        "Found a X25519 key, size: {}, payload: {}",
-                        x25519_key.len(),
-                        bytes_to_hex(&x25519_key)
-                    );
-                }
-                _ => {
-                    println!("Found an unknown key");
-                }
-            }
-        }
-    }
-    let algorithm = SignatureScheme::decode(&mut cursor).unwrap();
-    println!("Found algorithm: {}", algorithm);
-    let identity_key: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
-    println!(
-        "Found identity key: size: {}, payload: {}",
-        identity_key.len(),
-        bytes_to_hex(&identity_key)
-    );
-    println!("Bytes left: {}", cursor.unread_bytes());
-    let signature: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
-    println!(
-        "Found signature: size: {}, payload: {}",
-        signature.len(),
-        bytes_to_hex(&signature)
-    );
-
-    let mut cursor = Cursor::new(&uik_bytes);
-    let uik = UserInitKey::decode(&mut cursor).unwrap();
-
-    let mut buffer = Vec::new();
-    uik.encode(&mut buffer);
-
-    assert_eq!(uik_bytes, buffer);
 }

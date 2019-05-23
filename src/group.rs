@@ -157,6 +157,7 @@ impl Group {
             nodes: public_nodes,
             path: ciphertexts,
             init_key: init_key.clone(),
+            index: 0,
         };
 
         let mut welcome_group = self.clone();
@@ -173,6 +174,7 @@ impl Group {
             transcript: welcome_group.transcript.clone(),
             init_secret: welcome_group.get_init_secret(),
             leaf_secret,
+            version: CURRENT_VERSION,
         };
         (welcome, add)
     }

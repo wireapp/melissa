@@ -21,7 +21,7 @@ use utils::*;
 
 const APPLICATION_SECRET_SIZE: usize = 32;
 
-pub struct ApplicationPlaintext {
+pub struct ApplicationMessageContent {
     content: Vec<u8>,   // opaque content<0..2^32-1>;
     signature: Vec<u8>, // opaque signature<0..2^16-1>;
     zeros: Vec<u8>,     // uint8 zeros[length_of_padding];

@@ -113,7 +113,7 @@ impl EpochSecrets {
 
 pub struct HkdfLabel {
     label: String,
-    group_state: Vec<u8>,
+    context: Vec<u8>,
 }
 
 impl HkdfLabel {
@@ -122,7 +122,7 @@ impl HkdfLabel {
 
         HkdfLabel {
             label: full_label,
-            group_state: context.to_vec(),
+            context: context.to_vec(),
         }
     }
 
@@ -131,7 +131,7 @@ impl HkdfLabel {
         let mut all = Vec::new();
         //(self.length as u32).encode(&mut buffer);
         encode_vec_u8(&mut buffer, self.label.as_bytes());
-        encode_vec_u16(&mut buffer, &self.group_state);
+        encode_vec_u16(&mut buffer, &self.context);
         (buffer.len() as u32).encode(&mut all);
         all.append(&mut buffer);
         all
