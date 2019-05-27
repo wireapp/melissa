@@ -134,7 +134,7 @@ impl HkdfLabel {
         let mut buffer = Vec::new();
         (self.length as u16).encode(&mut buffer);
         encode_vec_u8(&mut buffer, self.label.as_bytes());
-        encode_vec_u32(&mut buffer, &self.group_state);
+        encode_vec_u32(&mut buffer, &self.context);
         buffer
     }
 }
