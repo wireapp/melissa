@@ -19,15 +19,17 @@ use crypto::hkdf;
 use sodiumoxide::crypto::hash::sha256;
 use utils::*;
 
+pub const HASH_LENGTH: usize = 32;
+
 pub fn derive_secret(secret: hkdf::Prk, label: &str, context: &[u8]) -> Vec<u8> {
     let context_hash = sha256::hash(context).0;
-    let hkdf_label = HkdfLabel::new(&context_hash, label);
+    let hkdf_label = HkdfLabel::new(&context_hash, label, HASH_LENGTH);
     let state = &hkdf_label.serialize();
 
     println!("HKDFLabel: {}", bytes_to_hex(&state));
 
     let info = hkdf::Info(state);
-    hkdf::expand(secret, info, 32)
+    hkdf::expand(secret, info, HASH_LENGTH)
 }
 
 pub const INITSECRETBYTES: usize = 32;
@@ -112,15 +114,17 @@ impl EpochSecrets {
 }
 
 pub struct HkdfLabel {
+    length: u16,
     label: String,
     group_state: Vec<u8>,
 }
 
 impl HkdfLabel {
-    pub fn new(context: &[u8], label: &str) -> Self {
+    pub fn new(context: &[u8], label: &str, length: usize) -> Self {
         let full_label = "mls10 ".to_owned() + label;
 
         HkdfLabel {
+            length: length as u16,
             label: full_label,
             group_state: context.to_vec(),
         }
@@ -128,19 +132,16 @@ impl HkdfLabel {
 
     pub fn serialize(&self) -> Vec<u8> {
         let mut buffer = Vec::new();
-        let mut all = Vec::new();
-        //(self.length as u32).encode(&mut buffer);
+        (self.length as u16).encode(&mut buffer);
         encode_vec_u8(&mut buffer, self.label.as_bytes());
-        encode_vec_u16(&mut buffer, &self.group_state);
-        (buffer.len() as u32).encode(&mut all);
-        all.append(&mut buffer);
-        all
+        encode_vec_u32(&mut buffer, &self.group_state);
+        buffer
     }
 }
 
 #[test]
 fn test_init_secret() {
-    const INIT_SECRET_0: [u8; 32] = [0; 32];
+    const INIT_SECRET_0: [u8; INITSECRETBYTES] = [0; INITSECRETBYTES];
     const UPDATE_SECRET_0: [u8; 32] = [0xAA; 32];
     let mut init_secret = InitSecret::from_bytes(&INIT_SECRET_0);
 

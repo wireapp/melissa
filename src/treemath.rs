@@ -349,4 +349,5 @@ fn verify_binary_test_vector_treemath() {
     for i in 0..sibling.len() {
         assert_eq!(sibling[i] as usize, treemath::sibling(i, tree_size));
     }
+    assert_eq!(cursor.has_more(), false);
 }

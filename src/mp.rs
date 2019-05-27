@@ -50,7 +50,7 @@ pub fn hkdf_expand_label(secret: &[u8], label: &str, context: &[u8], length: usi
     prk_value.clone_from_slice(&secret[..32]);
     let prk = hkdf::Prk(prk_value);
 
-    let hkdf_label = HkdfLabel::new(context, label);
+    let hkdf_label = HkdfLabel::new(context, label, 32);
     let state = &hkdf_label.serialize();
 
     println!("HKDFLabel for label '{}': {}", label, bytes_to_hex(&state));

@@ -39,8 +39,9 @@ impl NodeSecret {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
+        let hash = hash(bytes).0;
         let mut buffer = [0u8; NODESECRETBYTES];
-        buffer.clone_from_slice(&bytes[..NODESECRETBYTES]);
+        buffer.clone_from_slice(&hash[..NODESECRETBYTES]);
         NodeSecret(buffer)
     }
 }
@@ -98,6 +99,8 @@ impl Codec for Node {
 
 impl Node {
     pub fn from_secret(secret: &NodeSecret) -> Node {
+        let mut hashed_secret = secret.clone();
+        hashed_secret.hash();
         let kp = X25519KeyPair::new_from_secret(&secret);
         Node {
             secret: Some(*secret),
@@ -466,7 +469,10 @@ fn verify_binary_test_vector_resolution() {
                 );
             }
         }
+        assert_eq!(resolution_case_cursor.has_more(), false);
     }
+    assert_eq!(cases_cursor.has_more(), false);
+    assert_eq!(cursor.has_more(), false);
 }
 
 #[test]

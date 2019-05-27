@@ -26,8 +26,8 @@ pub type EcKemError = aesgcm::AesError;
 pub struct X25519AES {}
 #[derive(Clone, Debug, Hash)]
 pub struct X25519AESCiphertext {
-    public_key: X25519PublicKey,
-    sealed_box: Vec<u8>,
+    pub public_key: X25519PublicKey,
+    pub sealed_box: Vec<u8>,
 }
 
 impl Codec for X25519AESCiphertext {
@@ -65,11 +65,28 @@ impl X25519AES {
         payload: &[u8],
     ) -> Result<X25519AESCiphertext, EcKemError> {
         let kp = X25519KeyPair::new_random();
-        let secret = kp.private_key.shared_secret(public_key).unwrap();
+        X25519AES::enc(public_key, payload, &kp)
+    }
+    pub fn encrypt_with_ephemeral(
+        public_key: &X25519PublicKey,
+        payload: &[u8],
+        ephemeral_key_pair: &X25519KeyPair,
+    ) -> Result<X25519AESCiphertext, EcKemError> {
+        X25519AES::enc(public_key, payload, ephemeral_key_pair)
+    }
+    fn enc(
+        public_key: &X25519PublicKey,
+        payload: &[u8],
+        ephemeral_key_pair: &X25519KeyPair,
+    ) -> Result<X25519AESCiphertext, EcKemError> {
+        let secret = ephemeral_key_pair
+            .private_key
+            .shared_secret(public_key)
+            .unwrap();
         let (key, nonce) = derive_ecies_secrets(&secret);
         let sealed_box = aesgcm::aes_128_seal(payload, &key, &nonce)?;
         Ok(X25519AESCiphertext {
-            public_key: kp.public_key,
+            public_key: ephemeral_key_pair.public_key,
             sealed_box,
         })
     }
@@ -110,9 +127,9 @@ fn encrypt_decrypt_x25519_aes_random() {
 
 pub struct X25519ChaCha20 {}
 pub struct X25519ChaCha20Ciphertext {
-    public_key: X25519PublicKey,
-    nonce: aead::Nonce,
-    ciphertext: Vec<u8>,
+    pub public_key: X25519PublicKey,
+    pub nonce: aead::Nonce,
+    pub ciphertext: Vec<u8>,
 }
 
 impl X25519ChaCha20 {
