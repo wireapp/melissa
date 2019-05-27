@@ -139,25 +139,3 @@ impl HkdfLabel {
     }
 }
 
-#[test]
-fn test_init_secret() {
-    const INIT_SECRET_0: [u8; INITSECRETBYTES] = [0; INITSECRETBYTES];
-    const UPDATE_SECRET_0: [u8; 32] = [0xAA; 32];
-    let mut init_secret = InitSecret::from_bytes(&INIT_SECRET_0);
-
-    let epoch_secrets = init_secret.update(&UPDATE_SECRET_0, &[]);
-    let mut buffer: Vec<u8> = Vec::new();
-    init_secret.encode(&mut buffer);
-
-    assert_eq!(
-        &epoch_secrets.app_secret,
-        &hex_to_bytes("7303BD1A1C6C1B90A9D4B79A179C081B59D7EDD268AC668BF8CFE309399E368F")[..32]
-    );
-
-    println!("App secret: {}", bytes_to_hex(&epoch_secrets.app_secret));
-    println!(
-        "Confirmation key: {}",
-        bytes_to_hex(&epoch_secrets.confirmation_key)
-    );
-    println!("Init secret: {}", bytes_to_hex(&buffer));
-}

@@ -474,25 +474,3 @@ fn verify_binary_test_vector_resolution() {
     assert_eq!(cases_cursor.has_more(), false);
     assert_eq!(cursor.has_more(), false);
 }
-
-#[test]
-fn test_node_key_derivation() {
-    use utils::*;
-
-    let node_secret_hex = "20E029FBE9DE859E7BD6AEA95AC258AE743A9EABCCDE9358420D8C975365938714";
-    let mut cursor = Cursor::new(&hex_to_bytes(&node_secret_hex));
-    let node_secret = NodeSecret::decode(&mut cursor).unwrap();
-    let node = Node::from_secret(&node_secret);
-
-    let private_key_hex = "0020E029FBE9DE859E7BD6AEA95AC258AE743A9EABCCDE9358420D8C975365938714";
-    let public_key_hex = "00206667B1715A0AD45B0510E850322A8D471D4485EBCBFCC0F3BCCE7BCAE7B44F7F";
-
-    assert_eq!(
-        bytes_to_hex(&node.dh_private_key.unwrap().encode_detached()),
-        private_key_hex
-    );
-    assert_eq!(
-        bytes_to_hex(&node.dh_public_key.unwrap().encode_detached()),
-        public_key_hex
-    );
-}
