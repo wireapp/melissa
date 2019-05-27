@@ -116,7 +116,7 @@ impl EpochSecrets {
 pub struct HkdfLabel {
     length: u16,
     label: String,
-    group_state: Vec<u8>,
+    context: Vec<u8>,
 }
 
 impl HkdfLabel {
@@ -126,7 +126,7 @@ impl HkdfLabel {
         HkdfLabel {
             length: length as u16,
             label: full_label,
-            group_state: context.to_vec(),
+            context: context.to_vec(),
         }
     }
 
