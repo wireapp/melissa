@@ -38,6 +38,9 @@ impl X25519PublicKey {
         inner.copy_from_slice(&bytes[..X25519PUBLICKEYBYTES]);
         X25519PublicKey(inner)
     }
+    pub fn to_slice(&self) -> Vec<u8> {
+        self.0.to_vec()
+    }
 }
 
 impl Codec for X25519PublicKey {
@@ -430,12 +433,13 @@ ratchet_frontier: Vec<X25519PublicKey>, /* <0..2^16-1>; */
 #[test]
 fn verify_binary_test_vector_crypto() {
     use codec::*;
-    use crypto::eckem::*;
+
     use crypto::hkdf;
-    use crypto::schedule;
+    use crypto::hpke::*;
     use std::fs::File;
     use std::io::Read;
     use tree::*;
+    use crypto::schedule;
 
     let mut file = File::open("test_vectors/crypto.bin").unwrap();
     let mut buffer = Vec::new();
@@ -455,13 +459,15 @@ fn verify_binary_test_vector_crypto() {
     let _derive_secret_out_p256: Vec<u8> = decode_vec_u8(&mut cursor).unwrap();
     let _derive_key_pair_pub_p256: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
     let _ephemeral_key_p256: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
-    let _ciphertext_p256: Vec<u8> = decode_vec_u32(&mut cursor).unwrap();
+    let _ecies_out_p256: Vec<u8> = decode_vec_u32(&mut cursor).unwrap();
 
     let hkdf_extract_out_x25519: Vec<u8> = decode_vec_u8(&mut cursor).unwrap();
     let derive_secret_out_x25519: Vec<u8> = decode_vec_u8(&mut cursor).unwrap();
     let derive_key_pair_pub_x25519: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
     let ephemeral_key_x25519: Vec<u8> = decode_vec_u16(&mut cursor).unwrap();
-    let ciphertext_x25519: Vec<u8> = decode_vec_u32(&mut cursor).unwrap();
+    let ecies_out_x25519: Vec<u8> = decode_vec_u32(&mut cursor).unwrap();
+
+    assert!(cursor.is_empty());
 
     let hkdf_extract = hkdf::extract(
         hkdf::Salt(&hkdf_extract_salt),
@@ -481,31 +487,30 @@ fn verify_binary_test_vector_crypto() {
 
     let node_secret = NodeSecret::from_bytes(&derive_key_pair_seed);
     let key_pair = X25519KeyPair::new_from_secret(&node_secret);
-    let test_public_key = X25519PublicKey::from_slice(&derive_key_pair_pub_x25519);
-    assert_eq!(key_pair.public_key, test_public_key);
+    let derive_key_pair_pub = X25519PublicKey::from_slice(&derive_key_pair_pub_x25519);
+    assert_eq!(key_pair.public_key, derive_key_pair_pub);
 
-    let ephemeral_public_key = X25519PublicKey::from_slice(&derive_key_pair_pub_x25519);
     let mut seed_buffer: Vec<u8> = Vec::new();
     seed_buffer.append(&mut derive_key_pair_pub_x25519.clone());
     seed_buffer.append(&mut ecies_plaintext.clone());
 
     println!("Seed: {}", bytes_to_hex(&seed_buffer));
 
-    let sender_node_secret = NodeSecret::from_bytes(&seed_buffer);
-    let sender_key_pair = X25519KeyPair::new_from_secret(&sender_node_secret);
-    //assert_eq!(&sender_key_pair.public_key.0, &derive_key_pair_pub_x25519);
+    let ephemeral_node_secret = NodeSecret::from_bytes(&seed_buffer);
+    let ephemeral_key_pair = X25519KeyPair::new_from_secret(&ephemeral_node_secret);
 
-    println!("pkE: {}", bytes_to_hex(&sender_key_pair.public_key.0));
+    let ephemeral_public_key = ephemeral_key_pair.public_key.clone();
 
-    let ciphertext = X25519AES::encrypt_with_ephemeral(
-        &ephemeral_public_key,
-        &ecies_plaintext,
-        &sender_key_pair,
-    )
-    .unwrap();
-    assert_eq!(ciphertext.sealed_box, ciphertext_x25519);
+    println!("pkE: {}", bytes_to_hex(&key_pair.public_key.0));
+    assert_eq!(
+        X25519PublicKey::from_slice(&ephemeral_key_x25519),
+        ephemeral_public_key
+    );
 
-    assert_eq!(cursor.has_more(), false);
+    let ciphertext =
+        HpkeCiphertext::encrypt_with_ephemeral(&ephemeral_public_key, &ecies_plaintext, &key_pair)
+            .unwrap();
+    assert_eq!(ciphertext.content, ecies_out_x25519);
 }
 
 #[test]

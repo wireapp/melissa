@@ -16,5 +16,6 @@
 
 pub mod aesgcm;
 pub mod eckem;
+pub mod hpke;
 pub mod hkdf;
 pub mod schedule;
