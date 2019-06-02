@@ -109,19 +109,23 @@ impl Codec for GroupOperationType {
 pub struct GroupOperation {
     pub msg_type: GroupOperationType,
     pub group_operation: GroupOperationValue,
+    pub confirmation: u8
 }
 
 impl Codec for GroupOperation {
     fn encode(&self, buffer: &mut Vec<u8>) {
         self.msg_type.encode(buffer);
         self.group_operation.encode(buffer);
+        self.confirmation.encode(buffer);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let msg_type = GroupOperationType::decode(cursor)?;
         let group_operation = GroupOperationValue::decode(cursor)?;
+        let confirmation = u8::decode(cursor)?;
         Ok(GroupOperation {
             msg_type,
             group_operation,
+            confirmation
         })
     }
 }
@@ -170,12 +174,16 @@ impl Codec for Handshake {
     }
 }
 
+pub struct RatchetNode {
+    pub public_key: X25519PublicKey,
+    pub credential: Option<BasicCredential>
+}
+
 #[derive(Clone)]
 pub struct Welcome {
     pub group_id: GroupId,
     pub epoch: GroupEpoch,
-    pub roster: Vec<BasicCredential>,
-    pub tree: Vec<X25519PublicKey>,
+    pub tree: Vec<RatchetNode>,
     pub transcript: Vec<GroupOperationValue>,
     pub init_secret: InitSecret,
     pub leaf_secret: NodeSecret,
@@ -186,7 +194,6 @@ impl Codec for Welcome {
     fn encode(&self, buffer: &mut Vec<u8>) {
         self.group_id.encode(buffer);
         self.epoch.encode(buffer);
-        encode_vec_u16(buffer, &self.roster);
         encode_vec_u16(buffer, &self.tree);
         encode_vec_u16(buffer, &self.transcript);
         self.init_secret.encode(buffer);
@@ -196,8 +203,7 @@ impl Codec for Welcome {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let group_id = GroupId::decode(cursor)?;
         let epoch = GroupEpoch::decode(cursor)?;
-        let roster = decode_vec_u16(cursor)?;
-        let tree = decode_vec_u16(cursor)?;
+        let tree_hash = decode_vec_u16(cursor)?;
         let transcript = decode_vec_u16(cursor)?;
         let init_secret = InitSecret::decode(cursor)?;
         let leaf_secret = NodeSecret::decode(cursor)?;
@@ -205,7 +211,6 @@ impl Codec for Welcome {
         Ok(Welcome {
             group_id,
             epoch,
-            roster,
             tree,
             transcript,
             init_secret,

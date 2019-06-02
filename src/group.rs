@@ -63,8 +63,7 @@ pub struct Group {
     group_epoch: GroupEpoch,
     init_secret: InitSecret,
     epoch_secrets: Option<EpochSecrets>,
-    roster: Vec<BasicCredential>,
-    tree: Tree,
+    tree: Tree, //FIXME
     update_secret: Option<(u64, NodeSecret)>,
     transcript: Vec<GroupOperationValue>,
 }
@@ -76,7 +75,6 @@ impl Codec for Group {
         self.group_epoch.encode(buffer);
         self.init_secret.encode(buffer);
         self.epoch_secrets.encode(buffer);
-        encode_vec_u32(buffer, &self.roster);
         self.tree.encode(buffer);
         self.update_secret.encode(buffer);
         encode_vec_u32(buffer, &self.transcript);
@@ -87,7 +85,6 @@ impl Codec for Group {
         let group_epoch = GroupEpoch::decode(cursor)?;
         let init_secret = InitSecret::decode(cursor)?;
         let epoch_secrets = Option::<EpochSecrets>::decode(cursor)?;
-        let roster = decode_vec_u32(cursor)?;
         let tree = Tree::decode(cursor)?;
         let update_secret = Option::<(u64, NodeSecret)>::decode(cursor)?;
         let transcript = decode_vec_u32(cursor)?;
@@ -97,7 +94,6 @@ impl Codec for Group {
             group_epoch,
             init_secret,
             epoch_secrets,
-            roster,
             tree,
             update_secret,
             transcript,
@@ -117,7 +113,7 @@ impl Group {
             group_epoch: 0,
             init_secret,
             epoch_secrets: None,
-            roster: vec![credential],
+            roster: vec![credential], //CHANGE
             tree,
             update_secret: None,
             transcript: vec![],

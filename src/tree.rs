@@ -414,6 +414,34 @@ impl Tree {
     }
 }
 
+pub struct LeafNodeInfo {
+    pub public_key: X25519PublicKey,
+    pub credential: BasicCredential
+}
+
+pub struct LeafNodeHashInput {
+    pub hash_type: u8 = 0,
+    pub info: Optional<LeafNodeInfo>
+}
+
+pub struct ParentNodeHashInput {
+    pub hash_type: u8 = 1,
+    pub public_key: Optional<X25519PublicKey>,
+    pub left_hash: Vec<u8>,
+    pub right_hash: Vec<u8>
+}
+
+pub struct DirectPathNode {
+    pub public_key: X25519PublicKey,
+    pub encrypted_path_secrets: Vec<HpkeCiphertext>
+}
+
+pub struct DirectPath {
+    pub nodes: Vec<DirectPathNode>
+}
+
+
+
 #[test]
 fn verify_binary_test_vector_resolution() {
     use codec::*;

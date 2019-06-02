@@ -51,6 +51,8 @@ impl InitSecret {
 
         println!("Epoch secret {}", bytes_to_hex(&epoch_secret.0));
 
+        let sender_data_key = derive_secret(epoch_secret, "sender data", group_state);
+        let handshake_key = derive_secret(epoch_secret, "handshake", group_state);
         let application_secret = derive_secret(epoch_secret, "app", group_state);
         let confirmation_key = derive_secret(epoch_secret, "confirm", group_state);
         let init_secret = derive_secret(epoch_secret, "init", group_state);
