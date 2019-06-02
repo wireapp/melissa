@@ -414,16 +414,49 @@ impl Tree {
     }
 }
 
+#[derive(Clone)]
 pub struct LeafNodeInfo {
     pub public_key: X25519PublicKey,
     pub credential: BasicCredential
 }
 
+impl Codec for LeafNodeInfo {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.public_key.encode(buffer);
+        self.credential.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let public_key = X25519PublicKey::decode(cursor)?;
+        let credential = BasicCredential::decode(cursor)?;
+        Ok(Welcome {
+            public_key,
+            credential,
+        })
+    }
+}
+
+#[derive(Clone)]
 pub struct LeafNodeHashInput {
     pub hash_type: u8 = 0,
     pub info: Optional<LeafNodeInfo>
 }
 
+impl Codec for LeafNodeHashInput {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.hash_type.encode(buffer);
+        self.info.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let hash_type = u8::decode(cursor)?;
+        let info = Some(LeafNodeInfo::decode(cursor)?);
+        Ok(Welcome {
+            hash_type,
+            info,
+        })
+    }
+}
+
+#[derive(Clone)]
 pub struct ParentNodeHashInput {
     pub hash_type: u8 = 1,
     pub public_key: Optional<X25519PublicKey>,
@@ -431,16 +464,62 @@ pub struct ParentNodeHashInput {
     pub right_hash: Vec<u8>
 }
 
+impl Codec for Welcome {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.hash_type.encode(buffer);
+        self.public_key.encode(buffer);
+        encode_vec_u16(buffer, &self.left_hash);
+        encode_vec_u16(buffer, &self.right_hash);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let hash_type = u8:decode(cursor)?;
+        let public_key = Some(InitSecret::decode(cursor)?);
+        let left_hash = decode_vec_u16(cursor)?;
+        let right_hash = decode_vec_u16(cursor)?;
+        Ok(Welcome {
+            hash_type,
+            public_key,
+            left_hash,
+            right_hash
+        })
+    }
+}
+
+#[derive(Clone)]
 pub struct DirectPathNode {
     pub public_key: X25519PublicKey,
     pub encrypted_path_secrets: Vec<HpkeCiphertext>
 }
 
+impl Codec for DirectPathNode {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.public_key.encode(buffer);
+        encode_vec_u16(buffer, &self.encrypted_path_secrets);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let public_key = X25519PublicKey::decode(cursor)?;
+        let encrypted_path_secrets = decode_vec_u16(cursor)?;
+        Ok(Welcome{ 
+            public_key,
+            encrypted_path_secrets
+         });
+    }
+}
+
+#[derive(Clone)]
 pub struct DirectPath {
     pub nodes: Vec<DirectPathNode>
 }
 
-
+impl Codec for DirectPath {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u16(buffer, &self.nodes);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let nodes = decode_vec_u16(cursor)?;
+        Ok(Welcome{ nodes });
+    }
+}
 
 #[test]
 fn verify_binary_test_vector_resolution() {

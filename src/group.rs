@@ -113,7 +113,6 @@ impl Group {
             group_epoch: 0,
             init_secret,
             epoch_secrets: None,
-            roster: vec![credential], //CHANGE
             tree,
             update_secret: None,
             transcript: vec![],

@@ -174,9 +174,25 @@ impl Codec for Handshake {
     }
 }
 
+#[derive(Clone)]
 pub struct RatchetNode {
     pub public_key: X25519PublicKey,
     pub credential: Option<BasicCredential>
+}
+
+impl Codec for RatchetNode {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.public_key.encode(buffer);
+        self.credential.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let public_key = X25519PublicKey::decode(cursor)?;
+        let credential = Some(BasicCredential::decode(cursor)?);
+        Ok(RatchetNode {
+            public_key,
+            credential
+        })
+    }
 }
 
 #[derive(Clone)]
