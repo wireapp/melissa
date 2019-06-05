@@ -99,7 +99,7 @@ impl Codec for Node {
 
 impl Node {
     pub fn from_secret(secret: &NodeSecret) -> Node {
-        let mut hashed_secret = secret.clone();
+        let mut hashed_secret = *secret;
         hashed_secret.hash();
         let kp = X25519KeyPair::new_from_secret(&secret);
         Node {
@@ -328,7 +328,7 @@ impl Tree {
         let mut path: Vec<X25519AESCiphertext> = Vec::new();
         assert_eq!(dirpath_nodes.len(), copath_nodes.len());
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
-            let (mut dirpath_node, mut copath_node) = node_pair;
+            let (dirpath_node, copath_node) = node_pair;
             let public_key = copath_node.dh_public_key.unwrap();
             let ciphertext =
                 X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
@@ -352,7 +352,7 @@ impl Tree {
         let ciphertexts = Tree::kem_to(&mut nodes, &mut copath_nodes);
         let mut public_keys: Vec<X25519PublicKey> = Vec::new();
         public_keys.push(leaf_node.dh_public_key.unwrap());
-        for mut node in nodes {
+        for node in nodes {
             public_keys.push(node.dh_public_key.unwrap());
         }
         // strip root
