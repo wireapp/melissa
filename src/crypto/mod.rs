@@ -15,7 +15,6 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 pub mod aesgcm;
-pub mod eckem;
-pub mod hpke;
 pub mod hkdf;
+pub mod hpke;
 pub mod schedule;

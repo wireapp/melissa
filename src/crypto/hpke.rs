@@ -150,23 +150,36 @@ impl Codec for HpkeContext {
     }
 }
 
+#[derive(Clone, Hash)]
 pub struct HpkeCiphertext {
     pub ephemeral_public_key: X25519PublicKey,
     pub content: Vec<u8>,
 }
 
+impl Codec for HpkeCiphertext {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.ephemeral_public_key.encode(buffer);
+        encode_vec_u8(buffer, &self.content);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let ephemeral_public_key = X25519PublicKey::decode(cursor)?;
+        let content = decode_vec_u8(cursor)?;
+        Ok(HpkeCiphertext {
+            ephemeral_public_key,
+            content,
+        })
+    }
+}
+
 impl HpkeCiphertext {
     fn enc_x25519_aes(
-        public_key: &X25519PublicKey,
+        pkr: &X25519PublicKey,
         payload: &[u8],
         ephemeral_key_pair: &X25519KeyPair,
     ) -> Result<HpkeCiphertext, HpkeError> {
-        let zz = ephemeral_key_pair
-            .private_key
-            .shared_secret(public_key)
-            .unwrap();
+        let zz = ephemeral_key_pair.private_key.shared_secret(pkr).unwrap();
         let enc = ephemeral_key_pair.public_key.to_slice();
-        let (key, nonce) = setup_base_x25519_aes_128(public_key, &zz, &enc, &[]);
+        let (key, nonce) = setup_base_x25519_aes_128(pkr, &zz, &enc, &[]);
         let content = aes_128_seal(
             payload,
             &Aes128Key::from_slice(&key),
@@ -198,12 +211,12 @@ impl HpkeCiphertext {
         private_key: &X25519PrivateKey,
         ciphertext: &HpkeCiphertext,
     ) -> Result<Vec<u8>, HpkeError> {
-        let public_key = private_key.derive_public_key();
+        let pkr = private_key.derive_public_key();
         let zz = private_key
             .shared_secret(&ciphertext.ephemeral_public_key)
             .unwrap();
         let enc = ciphertext.ephemeral_public_key.to_slice();
-        let (key, nonce) = setup_base_x25519_aes_128(&public_key, &zz, &enc, &[]);
+        let (key, nonce) = setup_base_x25519_aes_128(&pkr, &zz, &enc, &[]);
         println!("zz: {}", bytes_to_hex(&zz));
         println!("AES key: {}", bytes_to_hex(&key));
         println!("AES nonce: {}", bytes_to_hex(&nonce));

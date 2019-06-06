@@ -15,7 +15,7 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
-use crypto::eckem::*;
+use crypto::hpke::*;
 use keys::*;
 use sodiumoxide::crypto::hash::sha256::*;
 use sodiumoxide::randombytes;
@@ -321,17 +321,14 @@ impl Tree {
         nodes
     }
 
-    pub fn kem_to(
-        dirpath_nodes: &mut [Node],
-        copath_nodes: &mut [Node],
-    ) -> Vec<X25519AESCiphertext> {
-        let mut path: Vec<X25519AESCiphertext> = Vec::new();
+    pub fn kem_to(dirpath_nodes: &mut [Node], copath_nodes: &mut [Node]) -> Vec<HpkeCiphertext> {
+        let mut path: Vec<HpkeCiphertext> = Vec::new();
         assert_eq!(dirpath_nodes.len(), copath_nodes.len());
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
             let (dirpath_node, copath_node) = node_pair;
             let public_key = copath_node.dh_public_key.unwrap();
             let ciphertext =
-                X25519AES::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
+                HpkeCiphertext::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
             path.push(ciphertext);
         }
         path
@@ -342,7 +339,7 @@ impl Tree {
         index: usize,
         size: usize,
         secret: NodeSecret,
-    ) -> (Vec<X25519PublicKey>, Vec<X25519AESCiphertext>) {
+    ) -> (Vec<X25519PublicKey>, Vec<HpkeCiphertext>) {
         let node_secret = secret;
         let mut nodes = Tree::hash_up(index, size, &node_secret);
         let mut copath_nodes = self.get_nodes_from_path(treemath::copath(index, size));
@@ -364,7 +361,7 @@ impl Tree {
         &self,
         size: usize,
         kem_path: &[usize],
-        ciphertexts: &[X25519AESCiphertext],
+        ciphertexts: &[HpkeCiphertext],
     ) -> (Vec<usize>, Vec<Node>) {
         let own_path = treemath::dirpath(self.own_leaf_index, size);
         let mut own_path_index = 0;
@@ -383,7 +380,7 @@ impl Tree {
         let intersect_ciphertext = ciphertexts[kem_path_index].clone();
         let intersect_node = self.nodes[own_path[own_path_index]].clone();
         let private_key = intersect_node.dh_private_key.unwrap();
-        let secret = X25519AES::decrypt(&private_key, &intersect_ciphertext).unwrap();
+        let secret = HpkeCiphertext::decrypt(&private_key, &intersect_ciphertext).unwrap();
         let node_secret = NodeSecret::from_bytes(secret.as_slice());
         (
             merge_path,
@@ -400,7 +397,7 @@ impl Tree {
         index: usize,
         size: usize,
         kem_path: &[usize],
-        ciphertext: &[X25519AESCiphertext],
+        ciphertext: &[HpkeCiphertext],
         public_keys: &[X25519PublicKey],
     ) {
         let public_merge_path = treemath::dirpath(index, size);
