@@ -21,7 +21,7 @@ extern crate sodiumoxide;
 
 use criterion::Criterion;
 use melissa::crypto::aesgcm::*;
-use melissa::crypto::eckem::*;
+use melissa::crypto::hpke::*;
 use melissa::crypto::hkdf::*;
 use melissa::group::*;
 use melissa::keys::*;
@@ -53,11 +53,11 @@ fn aes128_open(ciphertext: &[u8], key: &Aes128Key, nonce: &Nonce) {
 
 fn eckem_encrypt() {
     let kp = X25519KeyPair::new_random();
-    let _encrypted = X25519AES::encrypt(&kp.public_key, DATA).unwrap();
+    let _encrypted = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
 }
 
-fn eckem_decrypt(private_key: &X25519PrivateKey, ciphertext: &X25519AESCiphertext) {
-    let _decrypted = X25519AES::decrypt(private_key, ciphertext).unwrap();
+fn eckem_decrypt(private_key: &X25519PrivateKey, ciphertext: &HpkeCiphertext) {
+    let _decrypted = HpkeCiphertext::decrypt(private_key, ciphertext).unwrap();
 }
 
 // UserInitKeys
@@ -141,7 +141,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         b.iter_with_setup(
             || {
                 let kp = X25519KeyPair::new_random();
-                let encrypted = X25519AES::encrypt(&kp.public_key, DATA).unwrap();
+                let encrypted = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
                 (kp.private_key, encrypted)
             },
             |(public_key, encrypted)| eckem_decrypt(&public_key, &encrypted),

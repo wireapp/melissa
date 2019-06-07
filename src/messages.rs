@@ -15,7 +15,7 @@
 // along with this program. If not, see http://www.gnu.org/licenses/.
 
 use codec::*;
-use crypto::eckem::X25519AESCiphertext;
+use crypto::hpke::*;
 use crypto::schedule::InitSecret;
 use group::*;
 use keys::*;
@@ -239,7 +239,7 @@ impl Codec for Welcome {
 #[derive(Clone, Hash)]
 pub struct Update {
     pub nodes: Vec<X25519PublicKey>,
-    pub path: Vec<X25519AESCiphertext>,
+    pub path: Vec<HpkeCiphertext>,
 }
 
 impl Codec for Update {
@@ -257,7 +257,7 @@ impl Codec for Update {
 #[derive(Clone)]
 pub struct Add {
     pub nodes: Vec<X25519PublicKey>,
-    pub path: Vec<X25519AESCiphertext>,
+    pub path: Vec<HpkeCiphertext>,
     pub init_key: UserInitKey,
     pub index: u32,
 }
@@ -287,7 +287,7 @@ impl Codec for Add {
 pub struct Remove {
     pub removed: usize,
     pub nodes: Vec<X25519PublicKey>,
-    pub path: Vec<X25519AESCiphertext>,
+    pub path: Vec<HpkeCiphertext>,
 }
 
 impl Codec for Remove {

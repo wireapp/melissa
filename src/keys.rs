@@ -124,6 +124,12 @@ impl X25519KeyPair {
             public_key: X25519PublicKey(public_key.0),
         }
     }
+    pub fn new_from_private_key(private_key: &X25519PrivateKey) -> X25519KeyPair {
+        X25519KeyPair {
+            private_key: private_key.clone(),
+            public_key: private_key.derive_public_key(),
+        }
+    }
 }
 
 pub struct P256PublicKey([u8; 65]);

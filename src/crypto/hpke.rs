@@ -19,8 +19,9 @@ use crypto::aesgcm::*;
 use crypto::hkdf;
 use keys::*;
 use std::*;
+use utils::*;
 
-pub type HpkeKemError = AesError;
+pub type HpkeError = AesError;
 
 pub const NK_AES_GCM_128: usize = 16;
 pub const NN_AES_GCM_128: usize = 12;
@@ -149,27 +150,44 @@ impl Codec for HpkeContext {
     }
 }
 
+#[derive(Clone, Hash)]
 pub struct HpkeCiphertext {
     pub ephemeral_public_key: X25519PublicKey,
     pub content: Vec<u8>,
 }
 
+impl Codec for HpkeCiphertext {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.ephemeral_public_key.encode(buffer);
+        encode_vec_u8(buffer, &self.content);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let ephemeral_public_key = X25519PublicKey::decode(cursor)?;
+        let content = decode_vec_u8(cursor)?;
+        Ok(HpkeCiphertext {
+            ephemeral_public_key,
+            content,
+        })
+    }
+}
+
 impl HpkeCiphertext {
     fn enc_x25519_aes(
-        public_key: &X25519PublicKey,
-        enc: &[u8],
+        pkr: &X25519PublicKey,
+        payload: &[u8],
         ephemeral_key_pair: &X25519KeyPair,
-    ) -> Result<HpkeCiphertext, HpkeKemError> {
-        let zz = ephemeral_key_pair
-            .private_key
-            .shared_secret(public_key)
-            .unwrap();
-        let (key, nonce) = setup_base_x25519_aes_128(public_key, &zz, enc, &[]);
+    ) -> Result<HpkeCiphertext, HpkeError> {
+        let zz = ephemeral_key_pair.private_key.shared_secret(pkr).unwrap();
+        let enc = ephemeral_key_pair.public_key.to_slice();
+        let (key, nonce) = setup_base_x25519_aes_128(pkr, &zz, &enc, &[]);
         let content = aes_128_seal(
-            enc,
+            payload,
             &Aes128Key::from_slice(&key),
             &Nonce::from_slice(&nonce),
         )?;
+        println!("zz: {}", bytes_to_hex(&zz));
+        println!("AES key: {}", bytes_to_hex(&key));
+        println!("AES nonce: {}", bytes_to_hex(&nonce));
         Ok(HpkeCiphertext {
             ephemeral_public_key: ephemeral_key_pair.public_key,
             content,
@@ -177,16 +195,46 @@ impl HpkeCiphertext {
     }
     pub fn encrypt(
         public_key: &X25519PublicKey,
-        enc: &[u8],
-    ) -> Result<HpkeCiphertext, HpkeKemError> {
+        payload: &[u8],
+    ) -> Result<HpkeCiphertext, HpkeError> {
         let key_pair = X25519KeyPair::new_random();
-        HpkeCiphertext::enc_x25519_aes(public_key, enc, &key_pair)
+        HpkeCiphertext::enc_x25519_aes(public_key, payload, &key_pair)
     }
     pub fn encrypt_with_ephemeral(
         public_key: &X25519PublicKey,
-        enc: &[u8],
+        payload: &[u8],
         key_pair: &X25519KeyPair,
-    ) -> Result<HpkeCiphertext, HpkeKemError> {
-        HpkeCiphertext::enc_x25519_aes(public_key, enc, &key_pair)
+    ) -> Result<HpkeCiphertext, HpkeError> {
+        HpkeCiphertext::enc_x25519_aes(public_key, payload, &key_pair)
     }
+    pub fn decrypt(
+        private_key: &X25519PrivateKey,
+        ciphertext: &HpkeCiphertext,
+    ) -> Result<Vec<u8>, HpkeError> {
+        let pkr = private_key.derive_public_key();
+        let zz = private_key
+            .shared_secret(&ciphertext.ephemeral_public_key)
+            .unwrap();
+        let enc = ciphertext.ephemeral_public_key.to_slice();
+        let (key, nonce) = setup_base_x25519_aes_128(&pkr, &zz, &enc, &[]);
+        println!("zz: {}", bytes_to_hex(&zz));
+        println!("AES key: {}", bytes_to_hex(&key));
+        println!("AES nonce: {}", bytes_to_hex(&nonce));
+        aes_128_open(
+            &ciphertext.content,
+            &Aes128Key::from_slice(&key),
+            &Nonce::from_slice(&nonce),
+        )
+    }
+}
+
+#[test]
+fn hpke_encrypt_decrypt_x25519_aes() {
+    let kp = X25519KeyPair::new_random();
+    let cleartext = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+    let encrypted = HpkeCiphertext::encrypt(&kp.public_key, &cleartext).unwrap();
+    let decrypted = HpkeCiphertext::decrypt(&kp.private_key, &encrypted).unwrap();
+
+    assert_eq!(cleartext, decrypted);
 }
