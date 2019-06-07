@@ -307,3 +307,69 @@ impl Codec for Remove {
         })
     }
 }
+
+pub enum HpkeCipherSuite {
+    P256Sha256Aes128gcm = 0x0001,
+    P521Sha512Aes256gcm = 0x0002,
+    X25519Sha256Aes128gcm = 0x003,
+    X448Sha512Aes256gcm = 0x0004,
+}
+
+pub enum ContentType {
+    Invalid = 0,
+    Handshake = 1,
+    Application = 2,
+    Default = 255
+}
+
+#[derive(Clone)]
+pub struct MLSPlaintext {
+    pub group_id: GroupId,
+    pub epoch: GroupEpoch,
+    pub sender: u8, 
+    pub content_type: ContentType,
+ //Select type
+    pub signature: u8, //
+}
+
+#[derive(Clone)]
+pub struct MLSCiphertext {
+    pub group_id: GroupId,
+    pub epoch: GroupEpoch,
+    pub content_type: ContentType,
+    pub sender_data_nonce: u8, //
+    pub encrypted_sender_data: u8, //
+    pub ciphertext: u8, //
+}
+
+#[derive(Clone)]
+pub struct MLSSenderData {
+    pub sender: u8,
+    pub generation: u8,
+}
+
+#[derive(Clone)]
+pub struct MLSCiphertextSenderDataAAD {
+    pub group_id: GroupId,
+    pub epoch: GroupEpoch,
+    pub content_type: ContentType,
+    pub sender_data_nonce: u8, //
+}
+
+#[derive(Clone)]
+pub struct MLSCiphertextContent {
+    pub content: u8, //
+    pub signature: Signature,
+    pub sig_len: u16,
+    pub marker: u8,
+    pub zero_padding: u8, //
+}
+
+#[derive(Clone)]
+pub struct MLSCiphertextContentAAD {
+    pub group_id: GroupId,
+    pub epoch: GroupEpoch,
+    pub content_type: ContentType,
+    pub sender_data_nonce: u8, //
+    pub encrypted_sender_data: u8,
+}
