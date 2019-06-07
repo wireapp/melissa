@@ -121,7 +121,6 @@ impl Group {
     pub fn new_from_welcome(id: Identity, welcome: &Welcome) -> Self {
         let tree_size = welcome.tree.len();
         assert!(tree_size > 0);
-        let roster = welcome.roster.clone();
         let own_slot = roster.iter().position(|k| k.public_key == id.public_key);
         assert!(own_slot.is_some());
         let tree =
@@ -132,7 +131,6 @@ impl Group {
             group_epoch: welcome.epoch,
             init_secret: welcome.init_secret.clone(),
             epoch_secrets: None,
-            roster,
             tree,
             update_secret: None,
             transcript: welcome.transcript.clone(),
@@ -158,13 +156,9 @@ impl Group {
         let mut welcome_group = self.clone();
         welcome_group.process_add(&add);
 
-        let mut welcome_roster = self.roster.clone();
-        welcome_roster.push(id);
-
         let welcome = Welcome {
             group_id: welcome_group.group_id.clone(),
             epoch: welcome_group.group_epoch,
-            roster: welcome_group.roster.clone(),
             tree: welcome_group.tree.get_public_key_tree(),
             transcript: welcome_group.transcript.clone(),
             init_secret: welcome_group.get_init_secret(),

@@ -179,8 +179,8 @@ impl Codec for Tree {
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let nodes = decode_vec_u32(cursor)?;
-        let own_leaf_index = u32::decode(cursor)? as usize;
-        Ok(Tree {
+        let own_leaf_index = u32::decode(cursor)?;
+        Ok(Tree{
             nodes,
             own_leaf_index,
         })
@@ -425,7 +425,7 @@ impl Codec for LeafNodeInfo {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let public_key = X25519PublicKey::decode(cursor)?;
         let credential = BasicCredential::decode(cursor)?;
-        Ok(Welcome {
+        Ok(LeafNodeInfo {
             public_key,
             credential,
         })
@@ -434,8 +434,8 @@ impl Codec for LeafNodeInfo {
 
 #[derive(Clone)]
 pub struct LeafNodeHashInput {
-    pub hash_type: u8 = 0,
-    pub info: Optional<LeafNodeInfo>
+    pub hash_type: u8,
+    pub info: Option<LeafNodeInfo>
 }
 
 impl Codec for LeafNodeHashInput {
@@ -445,8 +445,8 @@ impl Codec for LeafNodeHashInput {
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let hash_type = u8::decode(cursor)?;
-        let info = Some(LeafNodeInfo::decode(cursor)?);
-        Ok(Welcome {
+        let info = Option::<LeafNodeInfo>::decode(cursor)?;
+        Ok(LeafNodeHashInput {
             hash_type,
             info,
         })
@@ -461,19 +461,19 @@ pub struct ParentNodeHashInput {
     pub right_hash: Vec<u8>
 }
 
-impl Codec for Welcome {
+impl Codec for ParentNodeHashInput {
     fn encode(&self, buffer: &mut Vec<u8>) {
         self.hash_type.encode(buffer);
         self.public_key.encode(buffer);
-        encode_vec_u16(buffer, &self.left_hash);
-        encode_vec_u16(buffer, &self.right_hash);
+        encode_vec_u8(buffer, &self.left_hash);
+        encode_vec_u8(buffer, &self.right_hash);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let hash_type = u8:decode(cursor)?;
         let public_key = Some(InitSecret::decode(cursor)?);
-        let left_hash = decode_vec_u16(cursor)?;
-        let right_hash = decode_vec_u16(cursor)?;
-        Ok(Welcome {
+        let left_hash = decode_vec_u8(cursor)?;
+        let right_hash = decode_vec_u8(cursor)?;
+        Ok(ParentNodeHashInput {
             hash_type,
             public_key,
             left_hash,
@@ -496,10 +496,10 @@ impl Codec for DirectPathNode {
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let public_key = X25519PublicKey::decode(cursor)?;
         let encrypted_path_secrets = decode_vec_u16(cursor)?;
-        Ok(Welcome{ 
+        Ok(DirectPathNode{ 
             public_key,
             encrypted_path_secrets
-         });
+         })
     }
 }
 
@@ -514,7 +514,7 @@ impl Codec for DirectPath {
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let nodes = decode_vec_u16(cursor)?;
-        Ok(Welcome{ nodes });
+        Ok(DirectPath { nodes })
     }
 }
 

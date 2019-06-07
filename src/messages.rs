@@ -163,7 +163,7 @@ impl Codec for Handshake {
         let operation = GroupOperation::decode(cursor)?;
         let signer_index = u32::decode(cursor)?;
         let algorithm = SignatureScheme::decode(cursor)?;
-        let signature = Some(Signature::decode(cursor)?);
+        let signature = Option::<Signature>::decode(cursor)?;
         Ok(Handshake {
             prior_epoch,
             operation,
@@ -187,7 +187,7 @@ impl Codec for RatchetNode {
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let public_key = X25519PublicKey::decode(cursor)?;
-        let credential = Some(BasicCredential::decode(cursor)?);
+        let credential = Option::<BasicCredential>::decode(cursor)?;
         Ok(RatchetNode {
             public_key,
             credential
@@ -227,7 +227,7 @@ impl Codec for Welcome {
         Ok(Welcome {
             group_id,
             epoch,
-            tree,
+            tree_hash,
             transcript,
             init_secret,
             leaf_secret,
@@ -308,13 +308,9 @@ impl Codec for Remove {
     }
 }
 
-pub enum HpkeCipherSuite {
-    P256Sha256Aes128gcm = 0x0001,
-    P521Sha512Aes256gcm = 0x0002,
-    X25519Sha256Aes128gcm = 0x003,
-    X448Sha512Aes256gcm = 0x0004,
-}
 
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
 pub enum ContentType {
     Invalid = 0,
     Handshake = 1,
@@ -322,14 +318,66 @@ pub enum ContentType {
     Default = 255
 }
 
+impl From<u8> for ContentType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => ContentType::Invalid,
+            1 => ContentType::Handshake,
+            2 => ContentType::Application,
+            _ => ContentType::Default,
+        }
+    }
+}
+
+impl Codec for ContentType {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        (*self as u8).encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        Ok(ContentType::from(cursor.take(1)?[0]))
+    }
+}
+
 #[derive(Clone)]
 pub struct MLSPlaintext {
     pub group_id: GroupId,
     pub epoch: GroupEpoch,
-    pub sender: u8, 
+    pub sender: u32, 
     pub content_type: ContentType,
- //Select type
-    pub signature: u8, //
+    pub operation: Option<GroupOperation>, //Switch
+    pub application_data: Vec<u8>, //Switch
+    pub signature: Signature,
+}
+
+impl Codec for MLSPlaintext {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.group_id.encode(buffer);
+        self.epoch.encode(buffer);
+        (self.sender as u32).encode(buffer);
+        self.content_type.encode(buffer);
+        self.operation.unwrap().encode(buffer);
+        encode_vec_u8(buffer, &self.application_data);
+        self.signature.encode(buffer);
+    }
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let group_id = GroupId::decode(cursor)?;
+        let epoch = GroupEpoch::decode(cursor)?;
+        let sender = u32::decode(cursor)?;
+        let content_type = ContentType::decode(cursor)?;
+        let operation = Option::<GroupOperation>::decode(cursor)?;
+        let application_data = decode_vec_u8(cursor)?;
+        let signature = Signature::decode(cursor)?;
+
+        Ok(MLSPlaintext {
+            group_id,
+            epoch,
+            sender,
+            content_type,
+            operation,
+            application_data,
+            signature
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -337,15 +385,59 @@ pub struct MLSCiphertext {
     pub group_id: GroupId,
     pub epoch: GroupEpoch,
     pub content_type: ContentType,
-    pub sender_data_nonce: u8, //
-    pub encrypted_sender_data: u8, //
-    pub ciphertext: u8, //
+    pub sender_data_nonce: Vec<u8>,
+    pub encrypted_sender_data: Vec<u8>,
+    pub ciphertext: Vec<u32>,
+}
+
+impl Codec for MLSCiphertext {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.group_id.encode(buffer);
+        self.epoch.encode(buffer);
+        self.content_type.encode(buffer);
+        encode_vec_u8(buffer, &self.sender_data_nonce);
+        encode_vec_u8(buffer, &self.encrypted_sender_data);
+        encode_vec_u32(buffer, &self.ciphertext);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let group_id = GroupId::decode(cursor)?;
+        let epoch = GroupEpoch::decode(cursor)?;
+        let content_type = ContentType::decode(cursor)?;
+        let sender_data_nonce = decode_vec_u8(cursor)?;
+        let encrypted_sender_data = decode_vec_u8(cursor)?;
+        let ciphertext = decode_vec_u32(cursor)?;
+        Ok(MLSCiphertext{
+            group_id,
+            epoch,
+            content_type,
+            sender_data_nonce,
+            encrypted_sender_data,
+            ciphertext
+        })
+    }
 }
 
 #[derive(Clone)]
 pub struct MLSSenderData {
-    pub sender: u8,
-    pub generation: u8,
+    pub sender: u32,
+    pub generation: u32,
+}
+
+impl Codec for MLSSenderData {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        (self.sender as u32).encode(buffer);
+        (self.generation as u32).encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let sender = u32::decode(cursor)?;
+        let generation = u32::decode(cursor)?;
+        Ok(MLSSenderData{
+            sender,
+            generation
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -353,16 +445,63 @@ pub struct MLSCiphertextSenderDataAAD {
     pub group_id: GroupId,
     pub epoch: GroupEpoch,
     pub content_type: ContentType,
-    pub sender_data_nonce: u8, //
+    pub sender_data_nonce: Vec<u8>,
+}
+
+impl Codec for MLSCiphertextSenderDataAAD {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.group_id.encode(buffer);
+        self.epoch.encode(buffer);
+        self.content_type.encode(buffer);
+        encode_vec_u8(buffer, &sender_data_nonce);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let group_id = GroupId::decode(cursor)?;
+        let epoch = GroupEpoch::decode(cursor)?;
+        let content_type = ContentType::decode(cursor)?;
+        let sender_data_nonce = decode_vec_u8(cursor)?;
+        Ok(MLSCiphertextSenderDataAAD{
+            group_id,
+            epoch,
+            content_type,
+            sender_data_nonce
+        })
+    }
 }
 
 #[derive(Clone)]
 pub struct MLSCiphertextContent {
-    pub content: u8, //
+    pub content: Vec<u8>, //
     pub signature: Signature,
     pub sig_len: u16,
     pub marker: u8,
     pub zero_padding: u8, //
+}
+
+impl Codec for MLSCiphertextContent {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        encode_vec_u8(buffer, &self.content);
+        self.signature.encode(buffer);
+        (self.sig_len as u16).encode(buffer);
+        (self.marker as u8).encode(buffer);
+        (self.zero_padding as u8).encode(buffer);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let content = decode_vec_u8(cursor)?;
+        let signature = Signature::decode(cursor)?;
+        let sig_len = u16::decode(cursor)?;
+        let marker = u8::decode(cursor)?;
+        let zero_padding = u8::decode(cursor)?;
+        Ok(MLSCiphertextContent {
+            content, 
+            signature,
+            sig_len,
+            marker,
+            zero_padding
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -370,6 +509,31 @@ pub struct MLSCiphertextContentAAD {
     pub group_id: GroupId,
     pub epoch: GroupEpoch,
     pub content_type: ContentType,
-    pub sender_data_nonce: u8, //
-    pub encrypted_sender_data: u8,
+    pub sender_data_nonce: Vec<u8>, //
+    pub encrypted_sender_data: Vec<u8>,
+}
+
+impl Codec for MLSCiphertextContentAAD {
+    fn encode(&self, buffer: &mut Vec<u8>) {
+        self.group_id.encode(buffer);
+        self.epoch.encode(buffer);
+        self.content_type.encode(buffer);
+        encode_vec_u8(buffer, &self.sender_data_nonce);
+        encode_vec_u8(buffer, &self.encrypted_sender_data);
+    }
+
+    fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
+        let group_id = GroupId::decode(cursor)?;
+        let epoch = GroupEpoch::decode(cursor)?;
+        let content_type = ContentType::decode(cursor)?;
+        let sender_data_nonce = decode_vec_u8(cursor)?;
+        let encrypted_sender_data = decode_vec_u8(cursor)?;
+        Ok(MLSCiphertextContentAAD{
+            group_id,
+            epoch,
+            content_type,
+            sender_data_nonce,
+            encrypted_sender_data
+        })
+    }
 }
