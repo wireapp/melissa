@@ -179,7 +179,7 @@ impl Codec for Tree {
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
         let nodes = decode_vec_u32(cursor)?;
-        let own_leaf_index = u32::decode(cursor)?;
+        let own_leaf_index = u32::decode(cursor)? as usize;
         Ok(Tree{
             nodes,
             own_leaf_index,
@@ -455,8 +455,8 @@ impl Codec for LeafNodeHashInput {
 
 #[derive(Clone)]
 pub struct ParentNodeHashInput {
-    pub hash_type: u8 = 1,
-    pub public_key: Optional<X25519PublicKey>,
+    pub hash_type: u8,
+    pub public_key: Option<X25519PublicKey>,
     pub left_hash: Vec<u8>,
     pub right_hash: Vec<u8>
 }
@@ -469,8 +469,8 @@ impl Codec for ParentNodeHashInput {
         encode_vec_u8(buffer, &self.right_hash);
     }
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
-        let hash_type = u8:decode(cursor)?;
-        let public_key = Some(InitSecret::decode(cursor)?);
+        let hash_type = u8::decode(cursor)?;
+        let public_key = Option::<InitSecret>::decode(cursor)?;
         let left_hash = decode_vec_u8(cursor)?;
         let right_hash = decode_vec_u8(cursor)?;
         Ok(ParentNodeHashInput {

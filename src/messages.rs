@@ -453,7 +453,7 @@ impl Codec for MLSCiphertextSenderDataAAD {
         self.group_id.encode(buffer);
         self.epoch.encode(buffer);
         self.content_type.encode(buffer);
-        encode_vec_u8(buffer, &sender_data_nonce);
+        encode_vec_u8(buffer, &self.sender_data_nonce);
     }
 
     fn decode(cursor: &mut Cursor) -> Result<Self, CodecError> {
