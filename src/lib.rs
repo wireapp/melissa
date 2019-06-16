@@ -23,7 +23,6 @@ pub mod crypto;
 pub mod group;
 pub mod keys;
 pub mod messages;
-pub mod mp;
 pub mod tree;
 pub mod treemath;
 pub mod utils;
