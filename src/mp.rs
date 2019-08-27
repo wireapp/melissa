@@ -50,7 +50,7 @@ pub fn hkdf_expand_label(secret: &[u8], label: &str, context: &[u8], length: usi
     prk_value.clone_from_slice(&secret[..32]);
     let prk = hkdf::Prk(prk_value);
 
-    let hkdf_label = HkdfLabel::new(context, label);
+    let hkdf_label = HkdfLabel::new(context, label, 32);
     let state = &hkdf_label.serialize();
 
     println!("HKDFLabel for label '{}': {}", label, bytes_to_hex(&state));
@@ -146,76 +146,4 @@ impl SenderApplicationSecret {
 
         Ok(stage_secrets)
     }
-}
-
-#[test]
-
-fn test_application_secret() {
-    let init_app_secret =
-        hex_to_bytes("7303BD1A1C6C1B90A9D4B79A179C081B59D7EDD268AC668BF8CFE309399E368F");
-    let mut app_secret_a = SenderApplicationSecret::from_bytes_for_sender(&init_app_secret, 1);
-    let mut app_secret_b = SenderApplicationSecret::from_bytes_for_sender(&init_app_secret, 2);
-
-    let stage_secrets_a = app_secret_a.get_secret_for_stage(1).unwrap();
-    let stage_secrets_b = app_secret_b.get_secret_for_stage(1).unwrap();
-
-    assert_eq!(
-        &stage_secrets_a.nonce,
-        &hex_to_bytes("52147E9EEDB9EE43FC3AD442")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_a.key,
-        &hex_to_bytes("04AEA0121F37963206EE51416E271918")[..16]
-    );
-
-    assert_eq!(
-        &stage_secrets_b.nonce,
-        &hex_to_bytes("CAD1630259E3D46FB5E0D14C")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_b.key,
-        &hex_to_bytes("78CA38A129C945100928EC65068DA4A1")[..16]
-    );
-
-    let stage_secrets_a = app_secret_a.get_secret_for_stage(2).unwrap();
-    let stage_secrets_b = app_secret_b.get_secret_for_stage(2).unwrap();
-
-    assert_eq!(
-        &stage_secrets_a.nonce,
-        &hex_to_bytes("B144419E67CF0F1D4BB5548F")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_a.key,
-        &hex_to_bytes("A4EED31CC1870466E2BA75E63341128C")[..16]
-    );
-
-    assert_eq!(
-        &stage_secrets_b.nonce,
-        &hex_to_bytes("0F023A9ACE4B100DA040BF43")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_b.key,
-        &hex_to_bytes("05CAE0495941E1653F59E91301F1CC2E")[..16]
-    );
-
-    let stage_secrets_a = app_secret_a.get_secret_for_stage(3).unwrap();
-    let stage_secrets_b = app_secret_b.get_secret_for_stage(3).unwrap();
-
-    assert_eq!(
-        &stage_secrets_a.nonce,
-        &hex_to_bytes("04BF258E07E8D64A5D703CBF")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_a.key,
-        &hex_to_bytes("91EA5F7FBFC99B93CDA479372B9B7682")[..16]
-    );
-
-    assert_eq!(
-        &stage_secrets_b.nonce,
-        &hex_to_bytes("D2C43110D4B5528283AF7E28")[..12]
-    );
-    assert_eq!(
-        &stage_secrets_b.key,
-        &hex_to_bytes("CE2D2732428E9048459AFD939071D31A")[..16]
-    );
 }

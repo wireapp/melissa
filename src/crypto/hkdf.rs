@@ -37,7 +37,7 @@ impl Drop for Key {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub struct Prk(pub [u8; 32]);
 
 impl Prk {
