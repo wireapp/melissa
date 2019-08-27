@@ -238,3 +238,17 @@ fn hpke_encrypt_decrypt_x25519_aes() {
 
     assert_eq!(cleartext, decrypted);
 }
+
+#[test]
+fn hpke_encrypt_decrypt_x25519_aes_random() {
+    use sodiumoxide::randombytes;
+    for _ in 0..1000 {
+        let kp = X25519KeyPair::new_random();
+        let cleartext = randombytes::randombytes(1000);
+
+        let encrypted = HpkeCiphertext::encrypt(&kp.public_key, &cleartext).unwrap();
+        let decrypted = HpkeCiphertext::decrypt(&kp.private_key, &encrypted).unwrap();
+
+        assert_eq!(cleartext, decrypted);
+    }
+}

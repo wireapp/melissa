@@ -39,9 +39,13 @@ impl NodeSecret {
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Self {
+        /*
         let hash = hash(bytes).0;
         let mut buffer = [0u8; NODESECRETBYTES];
         buffer.clone_from_slice(&hash[..NODESECRETBYTES]);
+        */
+        let mut buffer = [0u8; NODESECRETBYTES];
+        buffer.clone_from_slice(&bytes[..NODESECRETBYTES]);
         NodeSecret(buffer)
     }
 }
@@ -327,8 +331,8 @@ impl Tree {
         for node_pair in dirpath_nodes.iter_mut().zip(copath_nodes.iter_mut()) {
             let (dirpath_node, copath_node) = node_pair;
             let public_key = copath_node.dh_public_key.unwrap();
-            let ciphertext =
-                HpkeCiphertext::encrypt(&public_key, &dirpath_node.secret.unwrap().0[..]).unwrap();
+            let node_secret = &dirpath_node.secret.unwrap().0[..];
+            let ciphertext = HpkeCiphertext::encrypt(&public_key, node_secret).unwrap();
             path.push(ciphertext);
         }
         path
@@ -397,7 +401,7 @@ impl Tree {
         index: usize,
         size: usize,
         kem_path: &[usize],
-        ciphertext: &[HpkeCiphertext],
+        ciphertexts: &[HpkeCiphertext],
         public_keys: &[X25519PublicKey],
     ) {
         let public_merge_path = treemath::dirpath(index, size);
@@ -406,7 +410,7 @@ impl Tree {
             public_nodes.push(Node::new_from_public_key(key));
         }
         self.merge(public_merge_path, &public_nodes);
-        let (merge_path, nodes) = self.decrypt(size, &kem_path, ciphertext);
+        let (merge_path, nodes) = self.decrypt(size, &kem_path, ciphertexts);
         self.merge(merge_path, &nodes);
     }
 }
