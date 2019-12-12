@@ -53,7 +53,7 @@ pub fn hkdf_expand_label(secret: &[u8], label: &str, context: &[u8], length: usi
     let hkdf_label = HkdfLabel::new(context, label, 32);
     let state = &hkdf_label.serialize();
 
-    println!("HKDFLabel for label '{}': {}", label, bytes_to_hex(&state));
+    // println!("HKDFLabel for label '{}': {}", label, bytes_to_hex(&state));
 
     let info = hkdf::Info(state);
     hkdf::expand(prk, info, length)

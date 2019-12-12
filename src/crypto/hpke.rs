@@ -185,9 +185,9 @@ impl HpkeCiphertext {
             &Aes128Key::from_slice(&key),
             &Nonce::from_slice(&nonce),
         )?;
-        println!("zz: {}", bytes_to_hex(&zz));
-        println!("AES key: {}", bytes_to_hex(&key));
-        println!("AES nonce: {}", bytes_to_hex(&nonce));
+        // println!("zz: {}", bytes_to_hex(&zz));
+        // println!("AES key: {}", bytes_to_hex(&key));
+        // println!("AES nonce: {}", bytes_to_hex(&nonce));
         Ok(HpkeCiphertext {
             ephemeral_public_key: ephemeral_key_pair.public_key,
             content,
@@ -217,9 +217,9 @@ impl HpkeCiphertext {
             .unwrap();
         let enc = ciphertext.ephemeral_public_key.to_slice();
         let (key, nonce) = setup_base_x25519_aes_128(&pkr, &zz, &enc, &[]);
-        println!("zz: {}", bytes_to_hex(&zz));
-        println!("AES key: {}", bytes_to_hex(&key));
-        println!("AES nonce: {}", bytes_to_hex(&nonce));
+        // println!("zz: {}", bytes_to_hex(&zz));
+        // println!("AES key: {}", bytes_to_hex(&key));
+        // println!("AES nonce: {}", bytes_to_hex(&nonce));
         aes_128_open(
             &ciphertext.content,
             &Aes128Key::from_slice(&key),

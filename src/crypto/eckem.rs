@@ -189,9 +189,9 @@ fn generate_ecies_secrets() {
 
     let (key, nonce) = derive_ecies_secrets(&shared_secret);
 
-    println!("Shared secret: {}", bytes_to_hex(&shared_secret));
-    println!("Key: {}", bytes_to_hex(&key.0));
-    println!("Nonce: {}", bytes_to_hex(&nonce.0));
+    // println!("Shared secret: {}", bytes_to_hex(&shared_secret));
+    // println!("Key: {}", bytes_to_hex(&key.0));
+    // println!("Nonce: {}", bytes_to_hex(&nonce.0));
 }
 
 #[test]

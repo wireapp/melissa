@@ -26,7 +26,7 @@ pub fn derive_secret(secret: hkdf::Prk, label: &str, context: &[u8]) -> Vec<u8> 
     let hkdf_label = HkdfLabel::new(&context_hash, label, HASH_LENGTH);
     let state = &hkdf_label.serialize();
 
-    println!("HKDFLabel: {}", bytes_to_hex(&state));
+    // println!("HKDFLabel: {}", bytes_to_hex(&state));
 
     let info = hkdf::Info(state);
     hkdf::expand(secret, info, HASH_LENGTH)
@@ -49,7 +49,7 @@ impl InitSecret {
         let ikm = hkdf::Input(update_secret);
         let epoch_secret = hkdf::extract(salt, ikm);
 
-        println!("Epoch secret {}", bytes_to_hex(&epoch_secret.0));
+        // println!("Epoch secret {}", bytes_to_hex(&epoch_secret.0));
 
         let application_secret = derive_secret(epoch_secret, "app", group_state);
         let confirmation_key = derive_secret(epoch_secret, "confirm", group_state);
@@ -138,4 +138,3 @@ impl HkdfLabel {
         buffer
     }
 }
-
