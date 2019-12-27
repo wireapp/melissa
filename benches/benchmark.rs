@@ -21,8 +21,8 @@ extern crate sodiumoxide;
 
 use criterion::Criterion;
 use melissa::crypto::aesgcm::*;
-use melissa::crypto::hpke::*;
 use melissa::crypto::hkdf::*;
+use melissa::crypto::hpke::*;
 use melissa::group::*;
 use melissa::keys::*;
 use melissa::utils::*;
@@ -32,38 +32,91 @@ const DATA: &'static [u8; 1 * 1024] = &[1u8; 1 * 1024];
 
 // Crypto
 
-fn hkdf() {
-    let ikm = hex_to_bytes("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
-    let salt = hex_to_bytes("000102030405060708090a0b0c");
-    let len = 32;
-
-    let prk = extract(Salt(&salt), Input(&ikm));
-    let _okm = expand(prk, Info(DATA), len);
+fn criterion_hkdf(c: &mut Criterion) {
+    c.bench_function("HKDF extract", |b| {
+        let ikm = hex_to_bytes("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+        let salt = hex_to_bytes("000102030405060708090a0b0c");
+        b.iter(|| {
+            let _prk = extract(Salt(&salt), Input(&ikm));
+        });
+    });
+    c.bench_function("HKDF expand", |b| {
+        let ikm = hex_to_bytes("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+        let salt = hex_to_bytes("000102030405060708090a0b0c");
+        let len = 32;
+        let prk = extract(Salt(&salt), Input(&ikm));
+        b.iter(|| {
+            let _okm = expand(prk, Info(DATA), len);
+        });
+    });
 }
 
-fn aes128_seal() {
-    let key: Aes128Key = Aes128Key::from(randombytes::randombytes(AES128KEYBYTES));
-    let nonce = Nonce::new_random();
-    let _encrypted = aes_128_seal(DATA, &key, &nonce).unwrap();
+fn criterion_aes(c: &mut Criterion) {
+    c.bench_function("AES128 encrypt", |b| {
+        let key: Aes128Key = Aes128Key::from(randombytes::randombytes(AES128KEYBYTES));
+        let nonce = Nonce::new_random();
+        b.iter(|| {
+            let _encrypted = aes_128_seal(DATA, &key, &nonce).unwrap();
+        });
+    });
+    c.bench_function("AES128 decrypt", |b| {
+        b.iter_with_setup(
+            || {
+                let key: Aes128Key = Aes128Key::from(randombytes::randombytes(AES128KEYBYTES));
+                let nonce = Nonce::new_random();
+                let encrypted = aes_128_seal(DATA, &key, &nonce).unwrap();
+                (key, nonce, encrypted)
+            },
+            |(key, nonce, encrypted)| {
+                let _decrypted = aes_128_open(&encrypted, &key, &nonce).unwrap();
+            },
+        )
+    });
 }
 
-fn aes128_open(ciphertext: &[u8], key: &Aes128Key, nonce: &Nonce) {
-    let _decrypted = aes_128_open(ciphertext, key, nonce).unwrap();
+fn criterion_hpke(c: &mut Criterion) {
+    c.bench_function("HPKE gen key", |b| b.iter(|| X25519KeyPair::new_random()));
+    c.bench_function("HPKE encrypt", |b| {
+        let kp = X25519KeyPair::new_random();
+        b.iter(|| {
+            let _ = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
+        });
+    });
+    c.bench_function("HPKE decrypt", |b| {
+        let kp = X25519KeyPair::new_random();
+        let encrypted = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
+        b.iter(|| {
+            let _decrypted = HpkeCiphertext::decrypt(&kp.private_key, &encrypted).unwrap();
+        });
+    });
+}
+fn criterion_ed25519(c: &mut Criterion) {
+    c.bench_function("Ed25519 gen key", |b| b.iter(|| Identity::random()));
+    c.bench_function("Ed25519 sign", |b| {
+        let identity = Identity::random();
+        b.iter(|| {
+            let _ = identity.sign(DATA);
+        });
+    });
+    c.bench_function("Ed25519 verify", |b| {
+        let identity = Identity::random();
+        let signature = identity.sign(DATA);
+        b.iter(|| {
+            identity.verify(DATA, &signature);
+        });
+    });
 }
 
-fn eckem_encrypt() {
-    let kp = X25519KeyPair::new_random();
-    let _encrypted = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
-}
-
-fn eckem_decrypt(private_key: &X25519PrivateKey, ciphertext: &HpkeCiphertext) {
-    let _decrypted = HpkeCiphertext::decrypt(private_key, ciphertext).unwrap();
-}
-
-// UserInitKeys
-
-fn create_uik_bundle(identity: &Identity) -> UserInitKeyBundle {
-    UserInitKeyBundle::new(&identity)
+fn criterion_uik_bundle(c: &mut Criterion) {
+    c.bench_function("UserInitKey create bundle", |b| {
+        b.iter_with_setup(
+            || {
+                let identity = Identity::random();
+                identity
+            },
+            |identity| UserInitKeyBundle::new(&identity),
+        )
+    });
 }
 
 fn large_group() {
@@ -135,39 +188,11 @@ fn create_group() {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("HKDF extract & expand", |b| b.iter(|| hkdf()));
-    c.bench_function("ECKEM encrypt", |b| b.iter(|| eckem_encrypt()));
-    c.bench_function("ECKEM decrypt", |b| {
-        b.iter_with_setup(
-            || {
-                let kp = X25519KeyPair::new_random();
-                let encrypted = HpkeCiphertext::encrypt(&kp.public_key, DATA).unwrap();
-                (kp.private_key, encrypted)
-            },
-            |(public_key, encrypted)| eckem_decrypt(&public_key, &encrypted),
-        )
-    });
-    c.bench_function("AES128GCM encrypt", |b| b.iter(|| aes128_seal()));
-    c.bench_function("AES128GCM decrypt", |b| {
-        b.iter_with_setup(
-            || {
-                let key: Aes128Key = Aes128Key::from(randombytes::randombytes(AES128KEYBYTES));
-                let nonce = Nonce::new_random();
-                let ciphertext = aes_128_seal(DATA, &key, &nonce).unwrap();
-                (ciphertext, key, nonce)
-            },
-            |(ciphertext, key, nonce)| aes128_open(&ciphertext, &key, &nonce),
-        )
-    });
-    c.bench_function("UserInitKey create bundle", |b| {
-        b.iter_with_setup(
-            || {
-                let identity = Identity::random();
-                identity
-            },
-            |identity| create_uik_bundle(&identity),
-        )
-    });
+    criterion_hkdf(c);
+    criterion_hpke(c);
+    criterion_aes(c);
+    criterion_ed25519(c);
+    criterion_uik_bundle(c);
     c.bench_function("Create group: Alice & Bob", |b| b.iter(|| create_group()));
     c.bench_function("Create large group", |b| b.iter(|| large_group()));
 }
