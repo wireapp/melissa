@@ -22,6 +22,7 @@ pub enum CodecError {
     DecodingError,
 }
 
+#[derive(Debug, Clone)]
 pub struct Cursor {
     buffer: Vec<u8>,
     offset: usize,
