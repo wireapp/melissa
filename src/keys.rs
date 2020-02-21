@@ -372,9 +372,12 @@ impl Codec for UserInitKey {
         if algorithm != ED25519 {
             return Err(CodecError::DecodingError);
         }
+
         let identity_key = SignaturePublicKey::decode(cursor)?;
+
+        let supported_versions: Vec<ProtocolVersion> = decode_vec_u8(cursor)?;
+
         let signature = Signature::decode(cursor)?;
-        let supported_versions: Vec<ProtocolVersion> = decode_vec_u16(cursor)?;
         Ok(UserInitKey {
             cipher_suites,
             init_keys,
